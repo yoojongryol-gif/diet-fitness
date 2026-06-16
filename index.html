@@ -979,7 +979,10 @@ function saveGemini(){
   const m=document.getElementById("geminiModelInput").value.trim()||"gemini-flash-latest";
   if(k)localStorage.setItem("gemini.key",k);else localStorage.removeItem("gemini.key");
   localStorage.setItem("gemini.model",m);
-  toast(k?"AI 키를 저장했어요":"AI 키를 비웠어요");
+  // 키 저장 시 구글에 즉시 백업(연결돼 있으면) → 다른 기기 복원으로 키 자동 전달
+  if(gIsConnected())gDriveBackup(true);
+  else if(typeof scheduleBackup==="function")scheduleBackup();
+  toast(k?"AI 키를 저장했어요"+(gIsConnected()?" · 구글 동기화됨":""):"AI 키를 비웠어요");
 }
 async function exportData(){
   let photos={};try{photos=await idbAll();}catch(e){}
