@@ -1049,7 +1049,8 @@ async function gDriveBackup(silent){
   try{
     let photos={};try{photos=await idbAll();}catch(e){}
     let size=0;for(const k in photos)size+=(photos[k]||"").length;
-    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000};
+    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000,
+      gkey:localStorage.getItem("gemini.key")||"",gmodel:geminiModel()};
     const content=JSON.stringify(payload);
     const found=await gDriveFindBackup();
     if(found.err===403){if(!silent)toast("백업 권한이 없어요 — 설정에서 '구글 재연결'을 해주세요");gBackingUp=false;return false;}
@@ -1084,7 +1085,11 @@ async function gDriveRestore(){
     const photos=data.photos||{};
     for(const id in photos){try{await idbPut(id,photos[id]);}catch(e){}}
     state=st;normalizeState();
-    save();renderAll();toast("✅ 구글 백업에서 복원했어요");closeMenu();
+    // AI 키도 같은 구글 계정 기기로 자동 동기화(사장님 개인 드라이브에만 저장)
+    if(data.gkey)localStorage.setItem("gemini.key",data.gkey);
+    if(data.gmodel)localStorage.setItem("gemini.model",data.gmodel);
+    save();renderAll();renderGeminiUI();
+    toast("✅ 구글 백업에서 복원했어요"+(data.gkey?" (AI 키 포함)":""));closeMenu();
   }catch(e){toast("복원 중 오류가 났어요");}
 }
 async function gConnect(){
