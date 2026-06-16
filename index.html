@@ -494,7 +494,7 @@ function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 /* ===================== 저장 ===================== */
 function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d){state=d;normalizeState();}}catch(e){}}
-function save(){localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
+function save(){state._savedAt=Date.now();localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
 
 /* ===================== overlay open/close + 모바일 뒤로가기 ===================== */
 let _popSuppress=false;
@@ -1253,6 +1253,53 @@ function openRouteView(w){
   },250);
 }
 
+/* ===================== 자동 동기화 (기기 간, 데이터 무손실 병합) ===================== */
+let gSyncing=false;
+function _mergeById(a,b){
+  a=a||[];b=b||[];const m={};
+  for(const x of a)if(x&&x.id)m[x.id]=x;
+  for(const x of b){if(!x||!x.id)continue;const e=m[x.id];if(!e||((x.updatedAt||x.createdAt||0)>(e.updatedAt||e.createdAt||0)))m[x.id]=x;}
+  return Object.values(m);
+}
+function _mergeByKey(a,b,k){
+  a=a||[];b=b||[];const m={};
+  for(const x of a)if(x&&x[k])m[x[k]]=x;
+  for(const x of b){if(!x||!x[k])continue;const e=m[x[k]];if(!e||((x.createdAt||0)>(e.createdAt||0)))m[x[k]]=x;}
+  return Object.values(m);
+}
+function mergeRemote(remote,remoteSavedAt){
+  const r=remote||{};
+  state.meals=_mergeById(state.meals,r.meals);
+  state.workouts=_mergeById(state.workouts,r.workouts);
+  state.weights=_mergeByKey(state.weights,r.weights,"date");
+  state.notified=Object.assign({},r.notified||{},state.notified||{});
+  // 설정값(goals): 더 최근에 저장된 쪽 우선
+  if((remoteSavedAt||0)>(state._savedAt||0)&&r.goals)state.goals=r.goals;
+}
+async function gAutoSync(){
+  if(!gIsConnected()||gSyncing||!navigator.onLine)return;
+  gSyncing=true;
+  try{
+    const found=await gDriveFindBackup();
+    if(found.id){
+      const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+found.id+"?alt=media");
+      if(r.ok){
+        const data=await r.json();
+        const remote=data.state||data;
+        const before=JSON.stringify([state.meals.length,state.workouts.length,state.weights.length]);
+        // 원격 사진을 로컬에 없으면 보강
+        const photos=data.photos||{};
+        for(const id in photos){try{const ex=await idbGet(id);if(!ex)await idbPut(id,photos[id]);}catch(e){}}
+        mergeRemote(remote,data.savedAt||0);
+        const after=JSON.stringify([state.meals.length,state.workouts.length,state.weights.length]);
+        save();renderAll();if(curTab==="stats")renderStats();
+        if(before!==after)toast("☁️ 동기화됨");
+      }
+    }
+  }catch(e){}
+  gSyncing=false;
+}
+
 /* ===================== init ===================== */
 function init(){
   load();
@@ -1322,13 +1369,13 @@ function init(){
   document.getElementById("syncBtn").onclick=()=>{if(gIsConnected())gDriveBackup(false);else{renderGoogleUI();renderGeminiUI();renderNotifUI();openOverlay("menuSheet");}};
   const av=document.getElementById("appVer");if(av)av.textContent="버전 "+APP_VER;
   renderGoogleUI();
-  window.addEventListener("online",()=>{if(gIsConnected())gDriveBackup(true);});
+  window.addEventListener("online",()=>{if(gIsConnected())gAutoSync();});
 
   // 알림
   document.getElementById("mNotify").onclick=()=>ensureNotifyPermission().then(renderNotifUI);
   renderNotifUI();checkReminders();setInterval(checkReminders,30000);
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkReminders();});
-  window.addEventListener("focus",checkReminders);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkReminders();gAutoSync();}});
+  window.addEventListener("focus",()=>{checkReminders();gAutoSync();});
 
   // 오버레이: 바깥 탭 닫기 + 뷰어 + 닫기(✕) 버튼 주입
   document.querySelectorAll(".overlay").forEach(o=>o.onclick=e=>{if(e.target===o)closeOverlay(o);});
@@ -1348,7 +1395,8 @@ function init(){
   const gx=gsheet.querySelector(".sheet-close");
   if(gx)gx.onclick=()=>{if(gps.started&&gps.running&&!confirm("운동 기록을 종료할까요? (저장하려면 '종료·저장'을 누르세요)"))return;gpsAbort();};
 
-  if(gIsConnected())setTimeout(()=>gDriveBackup(true),1500);
+  if(gIsConnected())setTimeout(gAutoSync,1000);            // 앱 열면 자동으로 최신 병합
+  setInterval(()=>{if(gIsConnected())gAutoSync();},60000);  // 1분마다 자동 동기화
 }
 init();
 </script>
