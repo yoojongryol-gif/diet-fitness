@@ -285,6 +285,7 @@
     <label class="fld">📷 음식 사진</label>
     <div class="photo-grid" id="mealPhotoGrid"></div>
     <input type="file" id="mealPhotoInput" accept="image/*" style="display:none">
+    <input type="file" id="mealCamInput" accept="image/*" capture="environment" style="display:none">
     <div class="ai-box"><button class="ai-btn" id="aiBtn">✨ AI로 칼로리·영양소 추정</button></div>
     <div class="ai-note" id="aiNote" style="display:none"></div>
     <label class="fld">음식 이름</label>
@@ -726,11 +727,18 @@ function renderMealPhoto(){
     g.querySelector("#mealPhotoRm").onclick=()=>{curMealPhoto=null;renderMealPhoto();};
     g.querySelector("img").onclick=()=>openViewer(curMealPhoto.data);
   }else{
-    g.innerHTML=`<div class="add-photo" id="mealAddPhoto">＋<small>사진</small></div>`;
-    document.getElementById("mealAddPhoto").onclick=()=>document.getElementById("mealPhotoInput").click();
+    g.innerHTML=`<div class="add-photo" id="mealCamBtn">📷<small>촬영</small></div><div class="add-photo" id="mealGalBtn">🖼<small>앨범</small></div>`;
+    document.getElementById("mealCamBtn").onclick=()=>document.getElementById("mealCamInput").click();
+    document.getElementById("mealGalBtn").onclick=()=>document.getElementById("mealPhotoInput").click();
   }
 }
-async function setMealPhotoFromFile(file){try{curMealPhoto={id:null,data:await resizeImage(file)};renderMealPhoto();}catch(e){toast("사진 처리 실패");}}
+async function setMealPhotoFromFile(file){
+  try{
+    curMealPhoto={id:null,data:await resizeImage(file)};
+    renderMealPhoto();
+    aiAnalyze(true);   // 사진을 넣으면 자동으로 분석 시도(키 있으면 바로, 없으면 안내)
+  }catch(e){toast("사진 처리 실패");}
+}
 async function openMealSheet(meal,m){
   editMealId=m?m.id:null;curMeal=meal||(m&&m.meal)||curMealDefault();
   document.getElementById("mealSheetTitle").textContent=m?"식단 수정":"식단 기록";
@@ -775,7 +783,7 @@ function geminiKey(){return localStorage.getItem("gemini.key")||"";}
 function geminiModel(){return localStorage.getItem("gemini.model")||"gemini-flash-latest";}
 async function estimateFoodFromPhoto(dataUrl){
   const key=geminiKey();
-  if(!key){toast("설정(⚙️)에서 Gemini API 키를 먼저 넣어주세요");openOverlay("menuSheet");renderGeminiUI();return null;}
+  if(!key){return null;}
   const b64=dataUrl.split(",")[1];
   const mime=(dataUrl.match(/data:([^;]+);/)||[])[1]||"image/jpeg";
   const prompt='이 사진의 음식을 분석해 1인분 기준 영양정보를 추정해줘. 반드시 아래 JSON만 출력(설명 금지): {"name":"음식명(한국어)","kcal":숫자,"protein":숫자(g),"carb":숫자(g),"fat":숫자(g),"confidence":0~1사이}. 음식이 아니면 name은 빈 문자열.';
@@ -796,8 +804,15 @@ async function estimateFoodFromPhoto(dataUrl){
   }
   toast("AI 분석 실패: "+last);return null;
 }
-async function aiAnalyze(){
-  if(!curMealPhoto){toast("먼저 음식 사진을 넣어주세요");return;}
+async function aiAnalyze(auto){
+  if(!curMealPhoto){if(!auto)toast("먼저 음식 사진을 넣어주세요");return;}
+  if(!geminiKey()){
+    const note=document.getElementById("aiNote");
+    note.style.display="block";note.style.color="var(--amber)";
+    note.innerHTML="🔑 사진 자동 분석을 켜려면 <b>설정(⚙️) → Gemini API 키</b>를 한 번만 넣어주세요. (무료 발급: aistudio.google.com/apikey)";
+    if(!auto){openOverlay("menuSheet");renderGeminiUI();}
+    return;
+  }
   const btn=document.getElementById("aiBtn");btn.disabled=true;btn.textContent="🔍 분석 중…";
   const r=await estimateFoodFromPhoto(curMealPhoto.data);
   btn.disabled=false;btn.textContent="✨ AI로 칼로리·영양소 추정";
@@ -1261,7 +1276,8 @@ function init(){
 
   // 식단 시트
   document.getElementById("mealPhotoInput").onchange=e=>{if(e.target.files[0])setMealPhotoFromFile(e.target.files[0]);e.target.value="";};
-  document.getElementById("aiBtn").onclick=aiAnalyze;
+  document.getElementById("mealCamInput").onchange=e=>{if(e.target.files[0])setMealPhotoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("aiBtn").onclick=()=>aiAnalyze(false);
   document.getElementById("fKcal").addEventListener("keydown",e=>{if(e.key==="Enter")saveMeal();});
   document.getElementById("mealSave").onclick=saveMeal;
   document.getElementById("mealDelete").onclick=deleteMeal;
