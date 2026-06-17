@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17b-->
+<!--APPVER:2026.06.17c-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -463,6 +463,7 @@
       <div class="menu-item" id="mBackupNow"><span class="mi">☁️</span>지금 구글에 백업</div>
       <div class="menu-item" id="mRestore"><span class="mi">♻️</span>구글에서 복원</div>
       <div class="menu-item" id="mReauth"><span class="mi">🔐</span>백업 권한 추가(구글 재연결)</div>
+      <div class="menu-item" id="mShowCid"><span class="mi">🔑</span>내 클라이언트 ID 복사</div>
       <div class="menu-item" id="mDisconnect" style="color:var(--amber)"><span class="mi">🔌</span>구글 연결 해제</div>
     </div>
     <div id="gDisconnected">
@@ -518,7 +519,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17b";
+const APP_VER="2026.06.17c";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -1585,6 +1586,7 @@ function init(){
   gLoadCfg();
   document.getElementById("mConnect").onclick=gConnect;
   document.getElementById("mDisconnect").onclick=gDisconnect;
+  document.getElementById("mShowCid").onclick=()=>{const id=localStorage.getItem("g.clientId")||G.clientId||"";if(!id){toast("저장된 클라이언트 ID가 없어요");return;}try{navigator.clipboard.writeText(id);toast("클립보드에 복사됨");}catch(e){}prompt("내 구글 클라이언트 ID (길게 눌러 복사)",id);};
   document.getElementById("mBackupNow").onclick=()=>{if(!gIsConnected()){toast("먼저 구글 계정을 연결하세요");return;}gDriveBackup(false);};
   document.getElementById("mRestore").onclick=gDriveRestore;
   document.getElementById("mReauth").onclick=async()=>{const old=G.token;G.token=null;try{await gGetToken(true);toast("백업 권한을 추가했어요");renderGoogleUI();gDriveBackup(false);}catch(e){G.token=old;toast("재연결이 취소됐어요");}};
