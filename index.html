@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17d-->
+<!--APPVER:2026.06.17e-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -586,7 +586,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17d";
+const APP_VER="2026.06.17e";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -1533,7 +1533,7 @@ function gpsInitMap(){
 function openGpsSheet(){
   if(!navigator.geolocation){toast("이 기기는 위치 기능을 지원하지 않아요");return;}
   if(gps.line)try{gps.line.setLatLngs([]);}catch(e){}
-  gps.watchId=null;gps.running=false;gps.started=false;gps.points=[];gps.dist=0;gps.elapsed=0;gps.tick=null;gps.type="러닝";
+  gps.watchId=null;gps.running=false;gps.started=false;gps.points=[];gps.dist=0;gps.elapsed=0;gps.accum=0;gps.segStart=null;gps.tick=null;gps.type="러닝";gpsReleaseWake();
   setGpsPick();
   document.getElementById("gpsDist").textContent="0.00";
   document.getElementById("gpsTime").textContent="00:00";
@@ -1545,14 +1545,21 @@ function openGpsSheet(){
   openOverlay("gpsSheet");
   setTimeout(gpsInitMap,250);
 }
+let gpsWakeLock=null;
+async function gpsAcquireWake(){
+  try{if("wakeLock" in navigator){gpsWakeLock=await navigator.wakeLock.request("screen");}}catch(e){gpsWakeLock=null;}
+}
+async function gpsReleaseWake(){try{if(gpsWakeLock){await gpsWakeLock.release();}}catch(e){}gpsWakeLock=null;}
+/* 경과시간 = 누적(완료 구간) + 현재 진행 구간(시계 기반) — 화면 꺼졌다 켜져도 정확 */
+function gpsElapsed(){return (gps.accum||0)+(gps.running&&gps.segStart?(Date.now()-gps.segStart)/1000:0);}
 function gpsRenderStats(){
-  const km=gps.dist/1000;
+  const km=gps.dist/1000,el=gpsElapsed();
   document.getElementById("gpsDist").textContent=km.toFixed(2);
-  document.getElementById("gpsTime").textContent=fmtTimer(Math.floor(gps.elapsed));
+  document.getElementById("gpsTime").textContent=fmtTimer(Math.floor(el));
   let pace="-'--\"";
-  if(km>0.02){const p=(gps.elapsed/60)/km;const mm=Math.floor(p),ss=Math.round((p-mm)*60);pace=mm+"'"+pad(ss>=60?0:ss)+'"';}
+  if(km>0.02){const p=(el/60)/km;const mm=Math.floor(p),ss=Math.round((p-mm)*60);pace=mm+"'"+pad(ss>=60?0:ss)+'"';}
   document.getElementById("gpsPace").textContent=pace;
-  document.getElementById("gpsKcal").textContent=estBurn(gps.type,gps.elapsed/60,bodyWeight(todayStr()));
+  document.getElementById("gpsKcal").textContent=estBurn(gps.type,el/60,bodyWeight(todayStr()));
 }
 function gpsOnPos(pos){
   if(!gps.running)return;
@@ -1573,33 +1580,38 @@ function gpsOnPos(pos){
 function gpsStartPause(){
   const btn=document.getElementById("gpsStart");
   if(gps.running){
-    gps.running=false;if(gps.tick){clearInterval(gps.tick);gps.tick=null;}
+    gps.accum=gpsElapsed();gps.segStart=null;gps.running=false;
+    if(gps.tick){clearInterval(gps.tick);gps.tick=null;}
+    gpsReleaseWake();
     btn.textContent="▶ 계속";btn.style.background="var(--green)";
     document.getElementById("gpsNote").textContent="일시정지됨. 계속을 누르면 이어서 기록해요.";
   }else{
-    gps.running=true;gps.started=true;
+    gps.running=true;gps.started=true;gps.segStart=Date.now();
     btn.textContent="⏸ 일시정지";btn.style.background="var(--amber)";
     document.getElementById("gpsStop").style.display="block";
-    document.getElementById("gpsNote").textContent="기록 중… 화면을 켜두면 더 정확해요.";
+    document.getElementById("gpsNote").textContent="기록 중… 🔆 화면 켜짐을 유지합니다. (배터리 사용↑) 화면이 꺼지면 거리 추적이 멈출 수 있으니 켜두세요.";
     if(gps.watchId==null){
       gps.watchId=navigator.geolocation.watchPosition(gpsOnPos,
         ()=>{document.getElementById("gpsNote").textContent="위치 권한이 필요해요. 브라우저/기기 설정에서 허용해주세요.";},
         {enableHighAccuracy:true,maximumAge:1000,timeout:15000});
     }
-    gps.tick=setInterval(()=>{gps.elapsed+=1;gpsRenderStats();},1000);
+    gps.tick=setInterval(gpsRenderStats,1000);
+    gpsAcquireWake();
   }
 }
 function gpsCleanup(){
+  if(gps.running){gps.accum=gpsElapsed();gps.segStart=null;}
   if(gps.tick){clearInterval(gps.tick);gps.tick=null;}
   if(gps.watchId!=null){try{navigator.geolocation.clearWatch(gps.watchId);}catch(e){}gps.watchId=null;}
-  gps.running=false;
+  gps.running=false;gpsReleaseWake();
 }
 function gpsStop(){
   gpsCleanup();
-  const min=Math.max(1,Math.round(gps.elapsed/60)),km=gps.dist/1000;
-  if(gps.dist<10&&gps.elapsed<10){closeOverlay("gpsSheet");toast("기록이 없어 저장하지 않았어요");return;}
+  const el=gpsElapsed();
+  const min=Math.max(1,Math.round(el/60)),km=gps.dist/1000;
+  if(gps.dist<10&&el<10){closeOverlay("gpsSheet");toast("기록이 없어 저장하지 않았어요");return;}
   state.workouts.push({id:uid(),date:todayStr(),type:gps.type,minutes:min,sets:null,
-    kcalBurned:estBurn(gps.type,gps.elapsed/60,bodyWeight(todayStr())),
+    kcalBurned:estBurn(gps.type,el/60,bodyWeight(todayStr())),
     distance:Math.round(gps.dist),route:gps.points.map(p=>[+p.lat.toFixed(5),+p.lng.toFixed(5)]),
     memo:"",createdAt:Date.now()});
   save();closeOverlay("gpsSheet");selDate=todayStr();renderWorkout();renderDiet();if(curTab==="stats")renderStats();
@@ -1836,7 +1848,7 @@ function init(){
   // 알림
   document.getElementById("mNotify").onclick=()=>ensureNotifyPermission().then(renderNotifUI);
   renderNotifUI();checkReminders();setInterval(checkReminders,30000);
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkReminders();gAutoSync();}});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkReminders();gAutoSync();if(gps.running){gpsAcquireWake();gpsRenderStats();}}});
   window.addEventListener("focus",()=>{checkReminders();gAutoSync();});
 
   // 오버레이: 바깥 탭 닫기 + 뷰어 + 닫기(✕) 버튼 주입
