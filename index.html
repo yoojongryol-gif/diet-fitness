@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+<!--APPVER:2026.06.17a-->
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -190,6 +191,22 @@
   .gps-note{font-size:12px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5}
   .route-btn{background:none;border:none;font-size:18px;cursor:pointer;flex:0 0 auto;padding:0 2px}
   .leaflet-container{font:inherit}
+  /* 월간 운동 달력 */
+  .wocal-head{display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px}
+  .wocal-head .wch-t{font-size:14px;font-weight:700}
+  .wocal-head button{background:var(--surface2);border:none;border-radius:9px;width:30px;height:30px;font-size:15px;cursor:pointer;color:var(--text)}
+  .wocal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:14px}
+  .wocal .dow{font-size:10px;color:var(--muted);text-align:center;padding:2px 0;font-weight:600}
+  .wocal .dow.sun{color:#f87171}.wocal .dow.sat{color:#60a5fa}
+  .wcday{min-height:42px;border-radius:8px;padding:3px 1px;background:var(--surface2);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:pointer;overflow:hidden;position:relative}
+  .wcday.empty{background:transparent;cursor:default}
+  .wcday.today{outline:2px solid var(--accent)}
+  .wcday.sel{background:var(--accent)}
+  .wcday.sel .wcd-n{color:#fff}
+  .wcd-n{font-size:11px;font-weight:600}
+  .wcd-dot{font-size:11px;line-height:1.1;margin-top:1px}
+  .wcd-min{font-size:8px;color:var(--green);font-weight:700;line-height:1.1}
+  .wcday.sel .wcd-min{color:#fff}
 </style>
 </head>
 <body>
@@ -236,6 +253,12 @@
     <div class="card eat"><div class="num" id="sumWMin">0</div><div class="lbl">운동 분</div></div>
     <div class="card net"><div class="num" id="sumWCnt">0</div><div class="lbl">운동 수</div></div>
   </div>
+  <div class="wocal-head">
+    <button id="woPrevM">‹</button>
+    <span class="wch-t" id="woCalLbl"></span>
+    <button id="woNextM">›</button>
+  </div>
+  <div id="woCalendar"></div>
   <div class="sec-head"><div class="sec-title">🏃 오늘 운동</div><button class="gps-start-btn" id="gpsOpenBtn">🛰 야외 운동(GPS)</button></div>
   <div id="workoutList"></div>
 </div>
@@ -325,6 +348,11 @@
     </div>
     <label class="fld">소모 칼로리(kcal) <small style="color:var(--muted)">· 시간 입력 시 자동 추정</small></label>
     <input id="wKcal" type="number" inputmode="numeric" placeholder="0">
+    <label class="fld">📷 사진 / 🎬 동영상 (선택)</label>
+    <div class="photo-grid" id="workoutMediaGrid"></div>
+    <input type="file" id="woPhotoInput" accept="image/*" style="display:none">
+    <input type="file" id="woCamInput" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="woVideoInput" accept="video/*" style="display:none">
     <label class="fld">메모(선택)</label>
     <input id="wMemo" maxlength="100" autocomplete="off">
     <button class="save-btn" id="workoutSave">저장</button>
@@ -410,6 +438,12 @@
   <img id="vImg" src="" alt="">
 </div>
 
+<!-- 동영상 뷰어 -->
+<div class="viewer" id="vidViewer">
+  <button class="vclose" id="vvClose">✕</button>
+  <video id="vVid" controls playsinline style="max-width:96%;max-height:84%;border-radius:10px;background:#000"></video>
+</div>
+
 <!-- 설정 메뉴 -->
 <div class="overlay" id="menuSheet">
   <div class="sheet">
@@ -442,6 +476,10 @@
     <div class="menu-item" id="mNotify"><span class="mi">🔔</span>알림 켜기</div>
     <p style="color:var(--muted);font-size:12px;margin:6px 2px 0;line-height:1.6">🎯 목표 설정에서 끼니·운동 알림 시간을 정할 수 있어요. <b>앱이 열려 있을 때</b> 알림이 와요. 아이폰은 <b>홈 화면에 추가</b> 후 그 앱에서 열어야 작동해요.</p>
 
+    <h3 style="margin-top:22px">🔒 보안</h3>
+    <div class="menu-item" id="mLock"><span class="mi">🔒</span><span id="mLockLabel">앱 잠금 (암호) 설정</span></div>
+    <p style="color:var(--muted);font-size:12px;margin:6px 2px 0;line-height:1.6">암호(4~6자리) + Face ID/지문으로 앱을 잠글 수 있어요. 식단·체중 등 개인정보 보호용.</p>
+
     <h3 style="margin-top:22px">📦 데이터</h3>
     <div class="menu-item" id="mExport"><span class="mi">⬇️</span>파일로 내보내기</div>
     <div class="menu-item" id="mImport"><span class="mi">⬆️</span>파일에서 가져오기</div>
@@ -453,6 +491,15 @@
     </p>
     <p style="color:var(--muted);font-size:11px;margin-top:8px;text-align:center" id="appVer"></p>
   </div>
+</div>
+
+<div id="lockScreen" style="position:fixed;inset:0;z-index:500;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center">
+  <div style="font-size:52px">🔒</div>
+  <div style="font-size:16px;font-weight:700;margin:14px 0 18px">암호를 입력하세요</div>
+  <input id="lockInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" style="width:170px;text-align:center;font-size:24px;letter-spacing:8px;padding:12px" placeholder="••••">
+  <button class="save-btn" id="lockBtn" style="max-width:200px">잠금 해제</button>
+  <button class="save-btn" id="lockBioBtn" style="max-width:200px;display:none;background:transparent;border:1px solid var(--accent);color:var(--accent);margin-top:10px">🙂 Face ID / 지문으로 해제</button>
+  <div id="lockMsg" style="font-size:12px;color:var(--red);margin-top:10px;min-height:16px"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -470,21 +517,39 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.16";
+const APP_VER="2026.06.17a";
+/* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
+(function checkAppUpdate(){
+  try{
+    fetch(location.pathname+"?_v="+Date.now(),{cache:"no-store"}).then(r=>r.text()).then(html=>{
+      const m=html.match(/<!--APPVER:([^>]+?)-->/);
+      if(m&&m[1]&&m[1]!==APP_VER){
+        const k="upd_"+m[1];
+        if(!sessionStorage.getItem(k)){sessionStorage.setItem(k,"1");location.replace(location.pathname+"?v="+encodeURIComponent(m[1]));}
+      }
+    }).catch(function(){});
+  }catch(e){}
+})();
 let state={meals:[],workouts:[],weights:[],goals:{},notified:{}};
-let selDate=null,curTab="diet",statRange=7;
+let selDate=null,curTab="diet",statRange=7,woCalMonth=null;
 let editMealId=null,curMeal="breakfast",curMealPhoto=null;
 let editWorkoutId=null,curExType="러닝",timerInt=null,timerSec=0;
+let curWorkoutPhoto=null,curWorkoutVideo=null,_vidURL=null;
 
 function uid(){return Date.now()+""+Math.floor(Math.random()*999);}
 
 /* ===================== IndexedDB (사진 — localStorage 용량 회피) ===================== */
 let _db=null;
 function idbOpen(){return new Promise((res,rej)=>{if(_db)return res(_db);
-  const r=indexedDB.open("dietFitnessDB",1);
-  r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains("photos"))db.createObjectStore("photos");};
+  const r=indexedDB.open("dietFitnessDB",2);
+  r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains("photos"))db.createObjectStore("photos");if(!db.objectStoreNames.contains("videos"))db.createObjectStore("videos");};
   r.onsuccess=e=>{_db=e.target.result;res(_db);};
   r.onerror=()=>rej(r.error);});}
+/* 동영상 저장(Blob, 기기 로컬 전용 — 용량이 커서 구글 백업엔 미포함) */
+function vidPut(id,blob){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction("videos","readwrite");tx.objectStore("videos").put(blob,id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);}));}
+function vidGet(id){return idbOpen().then(db=>new Promise((res)=>{const tx=db.transaction("videos","readonly");const rq=tx.objectStore("videos").get(id);rq.onsuccess=()=>res(rq.result||null);rq.onerror=()=>res(null);}));}
+function vidDel(id){return idbOpen().then(db=>new Promise((res)=>{const tx=db.transaction("videos","readwrite");tx.objectStore("videos").delete(id);tx.oncomplete=()=>res();tx.onerror=()=>res();}));}
+function genVid(){return "vd_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 function idbPut(id,data){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction("photos","readwrite");tx.objectStore("photos").put(data,id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);}));}
 function idbGet(id){return idbOpen().then(db=>new Promise((res)=>{const tx=db.transaction("photos","readonly");const rq=tx.objectStore("photos").get(id);rq.onsuccess=()=>res(rq.result||null);rq.onerror=()=>res(null);}));}
 function idbDel(id){return idbOpen().then(db=>new Promise((res)=>{const tx=db.transaction("photos","readwrite");tx.objectStore("photos").delete(id);tx.oncomplete=()=>res();tx.onerror=()=>res();}));}
@@ -622,15 +687,45 @@ function renderWorkout(){
   document.getElementById("sumWBurn").textContent=Math.round(ws.reduce((s,w)=>s+(+w.kcalBurned||0),0));
   document.getElementById("sumWMin").textContent=ws.reduce((s,w)=>s+(+w.minutes||0),0);
   document.getElementById("sumWCnt").textContent=ws.length;
+  renderWoCalendar(selDate.slice(0,7));
   const el=document.getElementById("workoutList");
   if(!ws.length){el.innerHTML=`<div class="empty"><span class="em">🏃</span>오늘 운동 기록이 없어요.<br>+ 버튼으로 추가해보세요.</div>`;return;}
   el.innerHTML=ws.map(w=>{
     const distTxt=w.distance?`<span>📍 ${(w.distance/1000).toFixed(2)}km</span>`:"";
     const routeBtn=(w.route&&w.route.length)?`<button class="route-btn" data-route="${w.id}" title="경로 보기">🗺</button>`:"";
-    return `<div class="food-card" data-id="${w.id}"><div class="food-thumb ph">${exIcon(w.type)}</div><div class="food-info"><div class="food-name">${esc(w.type)}${w.sets?` · ${w.sets}세트`:""}</div><div class="food-macros"><span>⏱ ${w.minutes||0}분</span>${distTxt}${w.memo&&!w.distance?`<span>${esc(w.memo)}</span>`:""}</div></div>${routeBtn}<div class="food-kcal" style="color:var(--amber)">${Math.round(+w.kcalBurned||0)}</div></div>`;
+    return `<div class="food-card" data-id="${w.id}"><div class="food-thumb ph">${exIcon(w.type)}</div><div class="food-info"><div class="food-name">${esc(w.type)}${w.sets?` · ${w.sets}세트`:""}</div><div class="food-macros"><span>⏱ ${w.minutes||0}분</span>${distTxt}${w.photoId?'<span>📷</span>':""}${w.videoId?'<span>🎬</span>':""}${w.memo&&!w.distance?`<span>${esc(w.memo)}</span>`:""}</div></div>${routeBtn}<div class="food-kcal" style="color:var(--amber)">${Math.round(+w.kcalBurned||0)}</div></div>`;
   }).join("");
   el.querySelectorAll(".food-card").forEach(c=>{const w=(state.workouts||[]).find(x=>x.id===c.dataset.id);if(w)c.onclick=e=>{if(e.target.closest("[data-route]"))return;openWorkoutSheet(w);};});
   el.querySelectorAll("[data-route]").forEach(b=>b.onclick=e=>{e.stopPropagation();const w=(state.workouts||[]).find(x=>x.id===b.dataset.route);if(w)openRouteView(w);});
+}
+
+/* ===================== 월간 운동 달력 ===================== */
+function shiftWoMonth(n){
+  const base=woCalMonth||(selDate||todayStr()).slice(0,7);
+  const [y,m]=base.split("-").map(Number);
+  const d=new Date(y,m-1+n,1);
+  renderWoCalendar(d.getFullYear()+"-"+pad(d.getMonth()+1));
+}
+function renderWoCalendar(mP){
+  const el=document.getElementById("woCalendar");if(!el)return;
+  if(!mP)mP=(selDate||todayStr()).slice(0,7);
+  woCalMonth=mP;
+  document.getElementById("woCalLbl").textContent=mP.slice(0,4)+"년 "+(+mP.slice(5,7))+"월";
+  const [y,mo]=mP.split("-").map(Number);
+  const startDow=new Date(y,mo-1,1).getDay();
+  const daysInM=new Date(y,mo,0).getDate();
+  const dMin={},dCnt={};
+  (state.workouts||[]).forEach(w=>{if(!w.date||w.date.indexOf(mP)!==0)return;const d=+w.date.slice(8,10);dCnt[d]=(dCnt[d]||0)+1;dMin[d]=(dMin[d]||0)+(+w.minutes||0);});
+  const dows=["일","월","화","수","목","금","토"];
+  let html=`<div class="wocal">`+dows.map((n,i)=>`<div class="dow ${i===0?'sun':''}${i===6?'sat':''}">${n}</div>`).join("");
+  for(let i=0;i<startDow;i++)html+=`<div class="wcday empty"></div>`;
+  const today=todayStr();
+  for(let d=1;d<=daysInM;d++){
+    const ds=`${mP}-${pad(d)}`,cnt=dCnt[d]||0,min=dMin[d]||0;
+    html+=`<div class="wcday ${selDate===ds?'sel':''} ${ds===today?'today':''}" data-ds="${ds}"><div class="wcd-n">${d}</div>${cnt?`<div class="wcd-dot">🏃</div>${min?`<div class="wcd-min">${min}분</div>`:""}`:""}</div>`;
+  }
+  el.innerHTML=html+`</div>`;
+  el.querySelectorAll(".wcday[data-ds]").forEach(c=>c.onclick=()=>{selDate=c.dataset.ds;renderWorkout();});
 }
 
 /* ===================== 체중·목표 렌더 ===================== */
@@ -837,7 +932,35 @@ function setExPick(){
   document.querySelectorAll("#exPick .ex-opt").forEach(o=>o.onclick=()=>{curExType=o.dataset.t;setExPick();autoKcal();});
 }
 function autoKcal(){const min=num("wMin");if(!min)return;document.getElementById("wKcal").value=estBurn(curExType,min,bodyWeight(selDate||todayStr()));}
-function openWorkoutSheet(w){
+/* 운동 사진·동영상 첨부 */
+function renderWorkoutMedia(){
+  const g=document.getElementById("workoutMediaGrid");if(!g)return;
+  let html="";
+  if(curWorkoutPhoto)html+=`<div class="photo-thumb" data-photothumb><img src="${curWorkoutPhoto.data}"><button class="rm" data-rm="photo">✕</button></div>`;
+  if(curWorkoutVideo)html+=`<div class="photo-thumb" data-vidthumb style="background:#000;display:flex;align-items:center;justify-content:center"><span style="font-size:28px">🎬</span><button class="rm" data-rm="video">✕</button></div>`;
+  if(!curWorkoutPhoto)html+=`<div class="add-photo" data-add="cam">📷<small>촬영</small></div><div class="add-photo" data-add="gal">🖼<small>사진</small></div>`;
+  if(!curWorkoutVideo)html+=`<div class="add-photo" data-add="vid">🎬<small>동영상</small></div>`;
+  g.innerHTML=html;
+  g.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const t=b.dataset.add;document.getElementById(t==="cam"?"woCamInput":t==="gal"?"woPhotoInput":"woVideoInput").click();});
+  g.querySelectorAll("[data-rm]").forEach(b=>b.onclick=e=>{e.stopPropagation();if(b.dataset.rm==="photo")curWorkoutPhoto=null;else curWorkoutVideo=null;renderWorkoutMedia();});
+  const pt=g.querySelector("[data-photothumb] img");if(pt)pt.onclick=()=>openViewer(curWorkoutPhoto.data);
+  const vt=g.querySelector("[data-vidthumb]");if(vt)vt.onclick=e=>{if(e.target.closest("[data-rm]"))return;if(curWorkoutVideo&&curWorkoutVideo.blob)openVidViewer(curWorkoutVideo.blob);};
+}
+async function setWorkoutPhotoFromFile(file){
+  try{curWorkoutPhoto={id:null,data:await resizeImage(file)};renderWorkoutMedia();}catch(e){toast("사진 처리 실패");}
+}
+function setWorkoutVideoFromFile(file){
+  if(file.size>60*1024*1024){toast("동영상이 너무 커요 (60MB 이하 권장)");return;}
+  curWorkoutVideo={id:null,blob:file};renderWorkoutMedia();toast("🎬 동영상 첨부됨");
+}
+function openVidViewer(blob){
+  try{if(_vidURL)URL.revokeObjectURL(_vidURL);}catch(e){}
+  _vidURL=URL.createObjectURL(blob);
+  const v=document.getElementById("vVid");v.src=_vidURL;
+  openOverlay("vidViewer");try{const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{});}catch(e){}
+}
+function closeVidViewer(){const v=document.getElementById("vVid");try{v.pause();}catch(e){}closeOverlay("vidViewer");try{if(_vidURL){URL.revokeObjectURL(_vidURL);_vidURL=null;}}catch(e){}v.removeAttribute("src");v.load&&v.load();}
+async function openWorkoutSheet(w){
   editWorkoutId=w?w.id:null;curExType=(w&&w.type)||"러닝";
   document.getElementById("workoutSheetTitle").textContent=w?"운동 수정":"운동 기록";
   setExPick();
@@ -846,21 +969,33 @@ function openWorkoutSheet(w){
   document.getElementById("wKcal").value=w&&w.kcalBurned!=null?w.kcalBurned:"";
   document.getElementById("wMemo").value=w?(w.memo||""):"";
   resetTimer();
+  curWorkoutPhoto=null;curWorkoutVideo=null;
+  renderWorkoutMedia();
+  if(w&&w.photoId){const d=await idbGet(w.photoId);if(d){curWorkoutPhoto={id:w.photoId,data:d};renderWorkoutMedia();}}
+  if(w&&w.videoId){const b=await vidGet(w.videoId);if(b){curWorkoutVideo={id:w.videoId,blob:b};renderWorkoutMedia();}}
   document.getElementById("workoutDelete").style.display=w?"block":"none";
   openOverlay("workoutSheet");
 }
-function saveWorkout(){
+async function saveWorkout(){
   const min=num("wMin");
   let kcal=num("wKcal");if(!kcal&&min)kcal=estBurn(curExType,min,bodyWeight(selDate||todayStr()));
   if(!min&&!kcal){toast("운동 시간(분)을 입력해주세요");return;}
-  const rec={type:curExType,minutes:min,sets:num("wSets")||null,kcalBurned:kcal,memo:document.getElementById("wMemo").value.trim()};
-  if(editWorkoutId){Object.assign(state.workouts.find(x=>x.id===editWorkoutId),rec);}
+  const old=editWorkoutId?state.workouts.find(x=>x.id===editWorkoutId):null;
+  let photoId=old?old.photoId||null:null;const oldP=photoId;
+  if(curWorkoutPhoto){if(!curWorkoutPhoto.id){curWorkoutPhoto.id=genPid();try{await idbPut(curWorkoutPhoto.id,curWorkoutPhoto.data);}catch(e){toast("사진 저장 실패");return;}}photoId=curWorkoutPhoto.id;}else photoId=null;
+  if(oldP&&oldP!==photoId)idbDel(oldP);
+  let videoId=old?old.videoId||null:null;const oldV=videoId;
+  if(curWorkoutVideo){if(!curWorkoutVideo.id){curWorkoutVideo.id=genVid();try{await vidPut(curWorkoutVideo.id,curWorkoutVideo.blob);}catch(e){toast("동영상 저장 실패");return;}}videoId=curWorkoutVideo.id;}else videoId=null;
+  if(oldV&&oldV!==videoId)vidDel(oldV);
+  const rec={type:curExType,minutes:min,sets:num("wSets")||null,kcalBurned:kcal,memo:document.getElementById("wMemo").value.trim(),photoId,videoId};
+  if(editWorkoutId){Object.assign(old,rec);}
   else state.workouts.push(Object.assign({id:uid(),date:selDate,createdAt:Date.now()},rec));
   save();stopTimer();closeOverlay("workoutSheet");renderWorkout();renderDiet();if(curTab==="stats")renderStats();toast(editWorkoutId?"수정했어요":"저장했어요");
 }
 function deleteWorkout(){
   if(!editWorkoutId)return;
   if(!confirm("이 운동을 삭제할까요?"))return;
+  const w=state.workouts.find(x=>x.id===editWorkoutId);if(w){if(w.photoId)idbDel(w.photoId);if(w.videoId)vidDel(w.videoId);}
   state.workouts=state.workouts.filter(x=>x.id!==editWorkoutId);
   save();closeOverlay("workoutSheet");renderWorkout();renderDiet();if(curTab==="stats")renderStats();toast("삭제했어요");
 }
@@ -1301,6 +1436,68 @@ async function gAutoSync(){
 }
 
 /* ===================== init ===================== */
+/* ===================== 앱 잠금 (암호 + Face ID/지문) ===================== */
+let _lockHiddenAt=0;
+async function hashPin(pin){const b=new TextEncoder().encode("dietfit-lock|"+pin);const h=await crypto.subtle.digest("SHA-256",b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("");}
+function lockIsOn(){return !!localStorage.getItem("app.lock");}
+function _bufToB64u(buf){const b=new Uint8Array(buf);let s="";for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
+function _b64uToBuf(s){s=s.replace(/-/g,"+").replace(/_/g,"/");const pd=s.length%4?4-(s.length%4):0;s+="=".repeat(pd);const bin=atob(s);const b=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);return b.buffer;}
+function bioIsOn(){return !!localStorage.getItem("app.lock.bio");}
+async function bioAvailable(){try{return !!window.PublicKeyCredential&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();}catch(e){return false;}}
+async function registerBio(){
+  if(!await bioAvailable()){toast("이 기기는 생체인증을 지원하지 않아요");return false;}
+  try{
+    const cred=await navigator.credentials.create({publicKey:{
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      rp:{name:"식단·운동"},
+      user:{id:crypto.getRandomValues(new Uint8Array(16)),name:"dietfit-user",displayName:"식단·운동"},
+      pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required",residentKey:"preferred"},
+      timeout:60000,attestation:"none"
+    }});
+    if(!cred)return false;
+    localStorage.setItem("app.lock.bio",_bufToB64u(cred.rawId));
+    return true;
+  }catch(e){toast("생체인증 등록 실패 — 암호로 사용하세요");return false;}
+}
+async function bioUnlock(){
+  const id=localStorage.getItem("app.lock.bio");if(!id)return;
+  document.getElementById("lockMsg").textContent="";
+  try{
+    const a=await navigator.credentials.get({publicKey:{
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials:[{type:"public-key",id:_b64uToBuf(id)}],
+      userVerification:"required",timeout:60000
+    }});
+    if(a){document.getElementById("lockScreen").style.display="none";document.getElementById("lockMsg").textContent="";}
+  }catch(e){document.getElementById("lockMsg").textContent="생체인증 취소됨 — 암호로 해제하세요";}
+}
+function showLock(){if(!lockIsOn())return;const ls=document.getElementById("lockScreen");if(!ls)return;ls.style.display="flex";document.getElementById("lockInput").value="";document.getElementById("lockMsg").textContent="";const bb=document.getElementById("lockBioBtn");if(bb)bb.style.display=bioIsOn()?"block":"none";setTimeout(()=>{try{document.getElementById("lockInput").focus();}catch(e){}},150);}
+async function tryUnlock(){
+  const pin=document.getElementById("lockInput").value;
+  if(await hashPin(pin)===localStorage.getItem("app.lock")){document.getElementById("lockScreen").style.display="none";document.getElementById("lockMsg").textContent="";}
+  else{document.getElementById("lockMsg").textContent="암호가 틀렸어요";document.getElementById("lockInput").value="";try{document.getElementById("lockInput").focus();}catch(e){}}
+}
+async function setupLock(){
+  if(lockIsOn()){
+    if(!bioIsOn()&&await bioAvailable()&&confirm("Face ID(또는 지문)로 잠금 해제를 추가할까요?")){
+      if(await registerBio())toast("✅ Face ID/지문 추가 완료");
+      renderLockUI();return;
+    }
+    if(confirm("앱 잠금을 끌까요?")){localStorage.removeItem("app.lock");localStorage.removeItem("app.lock.bio");toast("앱 잠금을 껐어요");renderLockUI();}
+    return;
+  }
+  const pin=prompt("설정할 암호 (4~6자리 숫자)");
+  if(pin==null)return;
+  if(!/^\d{4,6}$/.test(pin)){toast("4~6자리 숫자로 입력하세요");return;}
+  localStorage.setItem("app.lock",await hashPin(pin));renderLockUI();
+  if(await bioAvailable()&&confirm("Face ID(또는 지문)로도 잠금을 해제할까요?")&&await registerBio()){
+    renderLockUI();toast("🔒 잠금 + Face ID/지문 설정 완료 — 다음 실행부터 적용");return;
+  }
+  toast("🔒 앱 잠금을 켰어요 — 다음 실행부터 적용");
+}
+function renderLockUI(){const el=document.getElementById("mLockLabel");if(el)el.textContent=lockIsOn()?(bioIsOn()?"🔓 앱 잠금/Face ID 끄기":"🔓 앱 잠금 끄기 (Face ID 추가)"):"앱 잠금 (암호) 설정";}
+
 function init(){
   load();
   selDate=todayStr();
@@ -1326,6 +1523,8 @@ function init(){
   document.getElementById("prevDayW").onclick=()=>shiftDate(-1);
   document.getElementById("nextDayW").onclick=()=>shiftDate(1);
   document.getElementById("workoutToday").onclick=()=>{selDate=todayStr();renderWorkout();};
+  document.getElementById("woPrevM").onclick=()=>shiftWoMonth(-1);
+  document.getElementById("woNextM").onclick=()=>shiftWoMonth(1);
   // 통계 범위
   document.querySelectorAll("#statRange button").forEach(b=>b.onclick=()=>{statRange=+b.dataset.r;document.querySelectorAll("#statRange button").forEach(x=>x.classList.toggle("on",x===b));renderStats();});
 
@@ -1342,6 +1541,11 @@ function init(){
   document.getElementById("timerReset").onclick=resetTimer;
   document.getElementById("workoutSave").onclick=saveWorkout;
   document.getElementById("workoutDelete").onclick=deleteWorkout;
+  document.getElementById("woPhotoInput").onchange=e=>{if(e.target.files[0])setWorkoutPhotoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("woCamInput").onchange=e=>{if(e.target.files[0])setWorkoutPhotoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("woVideoInput").onchange=e=>{if(e.target.files[0])setWorkoutVideoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("vvClose").onclick=closeVidViewer;
+  document.getElementById("vidViewer").onclick=e=>{if(e.target.id==="vidViewer")closeVidViewer();};
   // GPS 야외 운동
   document.getElementById("gpsOpenBtn").onclick=openGpsSheet;
   document.getElementById("gpsStart").onclick=gpsStartPause;
@@ -1358,6 +1562,14 @@ function init(){
   document.getElementById("mImport").onclick=()=>document.getElementById("importFile").click();
   document.getElementById("importFile").onchange=e=>{if(e.target.files[0])importData(e.target.files[0]);};
   document.getElementById("mReset").onclick=()=>{if(confirm("정말 모든 데이터를 삭제할까요? 복구할 수 없습니다.")){state={meals:[],workouts:[],weights:[],goals:{},notified:{}};save();renderAll();toast("초기화했어요");closeMenu();}};
+
+  // 앱 잠금 + Face ID
+  document.getElementById("mLock").onclick=setupLock;
+  document.getElementById("lockBtn").onclick=tryUnlock;
+  document.getElementById("lockBioBtn").onclick=bioUnlock;
+  document.getElementById("lockInput").addEventListener("keydown",e=>{if(e.key==="Enter")tryUnlock();});
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)_lockHiddenAt=Date.now();else if(lockIsOn()&&_lockHiddenAt&&Date.now()-_lockHiddenAt>120000)showLock();});
+  renderLockUI();
 
   // 구글 백업
   gLoadCfg();
@@ -1397,6 +1609,7 @@ function init(){
 
   if(gIsConnected())setTimeout(gAutoSync,1000);            // 앱 열면 자동으로 최신 병합
   setInterval(()=>{if(gIsConnected())gAutoSync();},60000);  // 1분마다 자동 동기화
+  showLock();                                              // 잠금이 켜져 있으면 잠금 화면 표시
 }
 init();
 </script>
