@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17e-->
+<!--APPVER:2026.06.17f-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -586,7 +586,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17e";
+const APP_VER="2026.06.17f";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -1676,9 +1676,13 @@ async function gAutoSync(){
         const photos=data.photos||{};
         for(const id in photos){try{const ex=await idbGet(id);if(!ex)await idbPut(id,photos[id]);}catch(e){}}
         mergeRemote(remote,data.savedAt||0);
+        // AI 키가 기기에서 사라졌으면(예: iOS 저장소 정리) 구글 백업에서 자동 복원
+        let keyRestored=false;
+        if(!localStorage.getItem("gemini.key")&&data.gkey){localStorage.setItem("gemini.key",data.gkey);keyRestored=true;}
+        if(!localStorage.getItem("gemini.model")&&data.gmodel)localStorage.setItem("gemini.model",data.gmodel);
         const after=JSON.stringify([state.meals.length,state.workouts.length,state.weights.length]);
-        save();renderAll();if(curTab==="stats")renderStats();
-        if(before!==after)toast("☁️ 동기화됨");
+        save();renderAll();if(curTab==="stats")renderStats();if(keyRestored&&typeof renderGeminiUI==="function")renderGeminiUI();
+        if(before!==after||keyRestored)toast("☁️ 동기화됨"+(keyRestored?" · AI 키 복원":""));
       }
     }
   }catch(e){}
