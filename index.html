@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17f-->
+<!--APPVER:2026.06.17g-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -586,7 +586,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17f";
+const APP_VER="2026.06.17g";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -1422,13 +1422,15 @@ async function gDriveBackup(silent){
   if(!navigator.onLine)return false;
   gBackingUp=true;
   try{
-    let photos={};try{photos=await idbAll();}catch(e){}
-    let size=0;for(const k in photos)size+=(photos[k]||"").length;
-    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000,
-      gkey:localStorage.getItem("gemini.key")||"",gmodel:geminiModel()};
-    const content=JSON.stringify(payload);
     const found=await gDriveFindBackup();
     if(found.err===403){if(!silent)toast("백업 권한이 없어요 — 설정에서 '구글 재연결'을 해주세요");gBackingUp=false;return false;}
+    let gkey=localStorage.getItem("gemini.key")||"",gmodel=geminiModel();
+    // 로컬에 키가 없으면 기존 클라우드 백업의 키를 보존(빈값으로 덮어쓰기 방지)+로컬에도 복원
+    if(!gkey&&found.id){try{const er=await gFetch("https://www.googleapis.com/drive/v3/files/"+found.id+"?alt=media");if(er.ok){const ed=await er.json();if(ed.gkey){gkey=ed.gkey;localStorage.setItem("gemini.key",ed.gkey);if(typeof renderGeminiUI==="function")renderGeminiUI();}if(ed.gmodel){gmodel=ed.gmodel;localStorage.setItem("gemini.model",ed.gmodel);}}}catch(e){}}
+    let photos={};try{photos=await idbAll();}catch(e){}
+    let size=0;for(const k in photos)size+=(photos[k]||"").length;
+    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000,gkey:gkey,gmodel:gmodel};
+    const content=JSON.stringify(payload);
     let fileId=found.id;
     if(!fileId){
       const cr=await gFetch("https://www.googleapis.com/drive/v3/files",{method:"POST",body:JSON.stringify({name:BACKUP_NAME,parents:["appDataFolder"]})});
