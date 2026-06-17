@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17a-->
+<!--APPVER:2026.06.17b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -314,7 +314,7 @@
     <label class="fld">음식 이름</label>
     <input id="fName" maxlength="60" placeholder="예: 김치찌개 백반" autocomplete="off">
     <div class="row2">
-      <div><label class="fld">칼로리(kcal)</label><input id="fKcal" type="number" inputmode="decimal" placeholder="0"></div>
+      <div><label class="fld">칼로리(kcal, 1인분)</label><input id="fKcal" type="number" inputmode="decimal" placeholder="0"></div>
       <div><label class="fld">수량(인분)</label><input id="fQty" type="number" inputmode="decimal" step="0.5" value="1"></div>
     </div>
     <div class="row2">
@@ -322,6 +322,7 @@
       <div><label class="fld">탄수(g)</label><input id="fCarb" type="number" inputmode="decimal" placeholder="0"></div>
       <div><label class="fld">지방(g)</label><input id="fFat" type="number" inputmode="decimal" placeholder="0"></div>
     </div>
+    <div id="mealTotalPreview" style="background:var(--surface2);border-radius:11px;padding:11px 13px;margin:4px 0 2px;font-size:13px;text-align:center"></div>
     <label class="fld">메모(선택)</label>
     <input id="fMemo" maxlength="100" placeholder="" autocomplete="off">
     <button class="save-btn" id="mealSave">저장</button>
@@ -517,7 +518,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17a";
+const APP_VER="2026.06.17b";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -834,6 +835,12 @@ async function setMealPhotoFromFile(file){
     aiAnalyze(true);   // 사진을 넣으면 자동으로 분석 시도(키 있으면 바로, 없으면 안내)
   }catch(e){toast("사진 처리 실패");}
 }
+function updateMealPreview(){
+  const el=document.getElementById("mealTotalPreview");if(!el)return;
+  const q=num("fQty")||1,kcal=num("fKcal"),p=num("fProtein"),c=num("fCarb"),f=num("fFat");
+  const tk=Math.round(kcal*q);
+  el.innerHTML=`총 <b style="color:var(--accent2);font-size:16px">${tk}</b> kcal${q!==1?` <span style="color:var(--muted)">(${Math.round(kcal)||0}×${q}인분)</span>`:""} · 단 ${Math.round(p*q)}g · 탄 ${Math.round(c*q)}g · 지 ${Math.round(f*q)}g`;
+}
 async function openMealSheet(meal,m){
   editMealId=m?m.id:null;curMeal=meal||(m&&m.meal)||curMealDefault();
   document.getElementById("mealSheetTitle").textContent=m?"식단 수정":"식단 기록";
@@ -849,6 +856,7 @@ async function openMealSheet(meal,m){
   curMealPhoto=null;
   if(m&&m.photoId){const d=await idbGet(m.photoId);if(d)curMealPhoto={id:m.photoId,data:d};}
   renderMealPhoto();
+  updateMealPreview();
   document.getElementById("mealDelete").style.display=m?"block":"none";
   openOverlay("mealSheet");
 }
@@ -918,6 +926,7 @@ async function aiAnalyze(auto){
   if(r.protein!=null)document.getElementById("fProtein").value=Math.round(r.protein);
   if(r.carb!=null)document.getElementById("fCarb").value=Math.round(r.carb);
   if(r.fat!=null)document.getElementById("fFat").value=Math.round(r.fat);
+  updateMealPreview();
   const note=document.getElementById("aiNote");
   const conf=r.confidence!=null?Math.round(r.confidence*100):null;
   note.style.display="block";
@@ -1532,6 +1541,7 @@ function init(){
   document.getElementById("mealPhotoInput").onchange=e=>{if(e.target.files[0])setMealPhotoFromFile(e.target.files[0]);e.target.value="";};
   document.getElementById("mealCamInput").onchange=e=>{if(e.target.files[0])setMealPhotoFromFile(e.target.files[0]);e.target.value="";};
   document.getElementById("aiBtn").onclick=()=>aiAnalyze(false);
+  ["fKcal","fQty","fProtein","fCarb","fFat"].forEach(id=>document.getElementById(id).addEventListener("input",updateMealPreview));
   document.getElementById("fKcal").addEventListener("keydown",e=>{if(e.key==="Enter")saveMeal();});
   document.getElementById("mealSave").onclick=saveMeal;
   document.getElementById("mealDelete").onclick=deleteMeal;
