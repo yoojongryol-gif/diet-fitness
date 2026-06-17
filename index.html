@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17c-->
+<!--APPVER:2026.06.17d-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -207,6 +207,22 @@
   .wcd-dot{font-size:11px;line-height:1.1;margin-top:1px}
   .wcd-min{font-size:8px;color:var(--green);font-weight:700;line-height:1.1}
   .wcday.sel .wcd-min{color:#fff}
+  /* 건강검진 세부 측정값 행 */
+  .hmrow{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+  .hmrow input{flex:1;min-width:0}
+  .hmrow .hm-label{flex:1.4}
+  .hmrow .hm-unit{flex:.7}
+  .hmrow .hm-rm{flex:0 0 auto;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px}
+  .hm-status{font-size:11px;padding:2px 7px;border-radius:8px;font-weight:700}
+  .hm-status.high{background:rgba(239,68,68,.15);color:#ef4444}
+  .hm-status.low{background:rgba(59,130,246,.15);color:#3b82f6}
+  .hm-status.ok{background:rgba(34,197,94,.15);color:#22c55e}
+  .health-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:10px;cursor:pointer}
+  .health-card .hc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .health-card .hc-type{font-weight:700;font-size:14px}
+  .health-card .hc-date{font-size:12px;color:var(--muted)}
+  .health-card .hc-metrics{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--muted)}
+  .health-card .hc-metrics span{background:var(--surface2);border-radius:7px;padding:3px 8px}
 </style>
 </head>
 <body>
@@ -289,12 +305,26 @@
   <div id="weightTrend" class="chart-box"></div>
 </div>
 
+<!-- 건강검진 -->
+<div class="wrap view" id="healthView">
+  <div class="summary">
+    <div class="card"><div class="num" id="hLastBf">-</div><div class="lbl">최근 체지방률</div></div>
+    <div class="card net"><div class="num" id="hLastMuscle">-</div><div class="lbl">최근 골격근량</div></div>
+    <div class="card eat"><div class="num" id="hCnt">0</div><div class="lbl">검사 기록</div></div>
+  </div>
+  <div class="sec-head"><div class="sec-title">📉 체지방률 추이</div></div>
+  <div id="hBfTrend" class="chart-box"></div>
+  <div class="sec-head"><div class="sec-title">🩺 검사 기록 <small style="color:var(--muted);font-weight:400">· 인바디·건강검진</small></div></div>
+  <div id="healthList"></div>
+</div>
+
 <button class="fab" id="addBtn">+</button>
 
 <nav class="tabbar">
   <button id="tabDiet" class="on"><span class="ti">🍽</span>식단</button>
   <button id="tabWorkout"><span class="ti">🏃</span>운동</button>
   <button id="tabBody"><span class="ti">⚖️</span>체중</button>
+  <button id="tabHealth"><span class="ti">🩺</span>검진</button>
   <button id="tabStats"><span class="ti">📊</span>통계</button>
 </nav>
 
@@ -433,6 +463,43 @@
   </div>
 </div>
 
+<!-- 건강검진 입력 시트 -->
+<div class="overlay" id="healthSheet">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3 id="healthSheetTitle">검사 기록</h3>
+    <label class="fld">종류</label>
+    <div class="ex-pick" id="hTypePick"></div>
+    <label class="fld">날짜</label>
+    <input type="date" id="hDate">
+    <label class="fld">📷 결과 사진 (인바디 / 검진지)</label>
+    <div class="photo-grid" id="hPhotoGrid"></div>
+    <input type="file" id="hPhotoInput" accept="image/*" style="display:none">
+    <input type="file" id="hCamInput" accept="image/*" capture="environment" style="display:none">
+    <div class="ai-box"><button class="ai-btn" id="hAiBtn">✨ AI로 내용 인식·분석</button></div>
+    <div class="ai-note" id="hAiNote" style="display:none"></div>
+    <label class="fld">핵심 지표 (체중·통계 자동 연동)</label>
+    <div class="row2">
+      <div><label class="fld">체중(kg)</label><input id="hWeight" type="number" inputmode="decimal" step="0.1" placeholder=""></div>
+      <div><label class="fld">체지방률(%)</label><input id="hBodyFat" type="number" inputmode="decimal" step="0.1" placeholder=""></div>
+    </div>
+    <div class="row2">
+      <div><label class="fld">골격근량(kg)</label><input id="hMuscle" type="number" inputmode="decimal" step="0.1" placeholder=""></div>
+      <div></div>
+    </div>
+    <label class="fld">세부 측정값</label>
+    <div id="hMetrics"></div>
+    <button type="button" id="hAddMetric" style="width:100%;background:var(--surface2);color:var(--text);border:none;border-radius:10px;padding:9px;font-size:13px;cursor:pointer;margin-top:6px">+ 항목 추가</button>
+    <label class="fld">AI 코멘트 · 권장사항</label>
+    <textarea id="hAdvice" style="width:100%;min-height:64px;border:1px solid var(--line);border-radius:11px;padding:11px;font:inherit;background:var(--surface);color:var(--text);box-sizing:border-box"></textarea>
+    <div style="font-size:11px;color:var(--muted);background:var(--surface2);border-radius:10px;padding:9px 11px;margin:8px 0;line-height:1.6">⚠️ AI가 사진에서 읽은 <b>추정값·참고 정보</b>입니다. 숫자 오인식이 있을 수 있으니 확인·보정하세요. <b>의학적 진단이 아니며</b>, 정확한 해석·치료는 반드시 <b>의사와 상담</b>하세요. (분석 시 사진은 구글 AI로 전송됩니다)</div>
+    <label class="fld">메모(선택)</label>
+    <input id="hMemo" maxlength="200" autocomplete="off">
+    <button class="save-btn" id="healthSave">저장</button>
+    <button class="save-btn" id="healthDelete" style="background:transparent;border:1px solid var(--red);color:var(--red);margin-top:10px;display:none">이 기록 삭제</button>
+  </div>
+</div>
+
 <!-- 이미지 뷰어 -->
 <div class="viewer" id="viewer">
   <button class="vclose" id="vClose">✕</button>
@@ -519,7 +586,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17c";
+const APP_VER="2026.06.17d";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -532,7 +599,7 @@ const APP_VER="2026.06.17c";
     }).catch(function(){});
   }catch(e){}
 })();
-let state={meals:[],workouts:[],weights:[],goals:{},notified:{}};
+let state={meals:[],workouts:[],weights:[],goals:{},notified:{},health:[]};
 let selDate=null,curTab="diet",statRange=7,woCalMonth=null;
 let editMealId=null,curMeal="breakfast",curMealPhoto=null;
 let editWorkoutId=null,curExType="러닝",timerInt=null,timerSec=0;
@@ -559,7 +626,7 @@ function idbAll(){return idbOpen().then(db=>new Promise((res)=>{const out={};con
 function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 
 /* ===================== 저장 ===================== */
-function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};}
+function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d){state=d;normalizeState();}}catch(e){}}
 function save(){state._savedAt=Date.now();localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
 
@@ -628,17 +695,18 @@ function exIcon(t){return EX_ICON[t]||"🏋️";}
 /* ===================== 탭 전환 ===================== */
 function switchTab(tab){
   curTab=tab;
-  const views={diet:"dietView",workout:"workoutView",body:"bodyView",stats:"statsView"};
-  const tabs={diet:"tabDiet",workout:"tabWorkout",body:"tabBody",stats:"tabStats"};
+  const views={diet:"dietView",workout:"workoutView",body:"bodyView",health:"healthView",stats:"statsView"};
+  const tabs={diet:"tabDiet",workout:"tabWorkout",body:"tabBody",health:"tabHealth",stats:"tabStats"};
   Object.entries(views).forEach(([k,id])=>document.getElementById(id).classList.toggle("on",k===tab));
   Object.entries(tabs).forEach(([k,id])=>document.getElementById(id).classList.toggle("on",k===tab));
   if(tab==="diet")renderDiet();
   else if(tab==="workout")renderWorkout();
   else if(tab==="body")renderBody();
+  else if(tab==="health")renderHealth();
   else if(tab==="stats")renderStats();
   window.scrollTo(0,0);
 }
-function renderAll(){renderDiet();renderWorkout();renderBody();if(curTab==="stats")renderStats();}
+function renderAll(){renderDiet();renderWorkout();renderBody();renderHealth();if(curTab==="stats")renderStats();}
 function shiftDate(n){const d=parseYmd(selDate);d.setDate(d.getDate()+n);selDate=ymd(d);if(curTab==="diet")renderDiet();else if(curTab==="workout")renderWorkout();}
 function curMealDefault(){const h=new Date().getHours();if(h<11)return"breakfast";if(h<16)return"lunch";if(h<21)return"dinner";return"snack";}
 
@@ -934,6 +1002,165 @@ async function aiAnalyze(auto){
   note.textContent=`⚠️ AI 추정값이에요${conf!=null?` (신뢰도 ${conf}%)`:""} — 실제와 다를 수 있으니 꼭 확인·보정 후 저장하세요`;
   note.style.color=(conf!=null&&conf<40)?"var(--red)":"var(--amber)";
   toast("✨ AI 추정 완료 — 보정 후 저장하세요");
+}
+
+/* ===================== 건강검진 (인바디·검진 AI 인식) ===================== */
+const HEALTH_TYPES={inbody:{name:"인바디",icon:"💪"},medical:{name:"건강검진",icon:"🩺"}};
+let editHealthId=null,curHealthType="inbody",curHealthPhoto=null,hMetricRows=[];
+async function geminiVisionJSON(dataUrl,prompt){
+  const key=geminiKey();if(!key)return {__nokey:true};
+  const b64=dataUrl.split(",")[1];
+  const mime=(dataUrl.match(/data:([^;]+);/)||[])[1]||"image/jpeg";
+  const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:b64}}]}],generationConfig:{temperature:0.2,responseMimeType:"application/json"}};
+  const models=[...new Set([geminiModel(),"gemini-flash-latest","gemini-2.0-flash-001"])];
+  let last="";
+  for(const mo of models){
+    try{
+      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${mo}:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!r.ok){last=mo+" HTTP "+r.status;continue;}
+      const j=await r.json();
+      let txt=(((j.candidates||[])[0]||{}).content||{}).parts;txt=txt&&txt[0]&&txt[0].text;
+      if(!txt){last=mo+" 빈 응답";continue;}
+      return JSON.parse(txt.replace(/```json|```/g,"").trim());
+    }catch(e){last=mo+" "+String(e).slice(0,60);}
+  }
+  toast("AI 분석 실패: "+last);return null;
+}
+function setHealthTypePick(){
+  document.getElementById("hTypePick").innerHTML=Object.entries(HEALTH_TYPES).map(([k,t])=>`<div class="ex-opt ${curHealthType===k?'sel':''}" data-t="${k}">${t.icon} ${t.name}</div>`).join("");
+  document.querySelectorAll("#hTypePick .ex-opt").forEach(o=>o.onclick=()=>{curHealthType=o.dataset.t;setHealthTypePick();});
+}
+function renderHealthPhoto(){
+  const g=document.getElementById("hPhotoGrid");
+  if(curHealthPhoto){
+    g.innerHTML=`<div class="photo-thumb"><img src="${curHealthPhoto.data}"><button class="rm" id="hPhotoRm">✕</button></div>`;
+    g.querySelector("#hPhotoRm").onclick=()=>{curHealthPhoto=null;renderHealthPhoto();};
+    g.querySelector("img").onclick=()=>openViewer(curHealthPhoto.data);
+  }else{
+    g.innerHTML=`<div class="add-photo" id="hCamBtn">📷<small>촬영</small></div><div class="add-photo" id="hGalBtn">🖼<small>앨범</small></div>`;
+    document.getElementById("hCamBtn").onclick=()=>document.getElementById("hCamInput").click();
+    document.getElementById("hGalBtn").onclick=()=>document.getElementById("hPhotoInput").click();
+  }
+}
+async function setHealthPhotoFromFile(file){
+  try{curHealthPhoto={id:null,data:await resizeImage(file)};renderHealthPhoto();hAiAnalyze(true);}catch(e){toast("사진 처리 실패");}
+}
+function renderHMetrics(){
+  const el=document.getElementById("hMetrics");
+  el.innerHTML=hMetricRows.map((m,i)=>`<div class="hmrow" data-i="${i}"><input class="hm-label" placeholder="항목" value="${esc(m.label||"")}"><input class="hm-val" placeholder="값" value="${esc(m.value||"")}"><input class="hm-unit" placeholder="단위" value="${esc(m.unit||"")}">${m.status?`<span class="hm-status ${m.status==='높음'?'high':m.status==='낮음'?'low':'ok'}">${esc(m.status)}</span>`:""}<button type="button" class="hm-rm" data-i="${i}">✕</button></div>`).join("");
+  el.querySelectorAll(".hmrow").forEach(row=>{
+    const i=+row.dataset.i;
+    row.querySelector(".hm-label").oninput=e=>hMetricRows[i].label=e.target.value;
+    row.querySelector(".hm-val").oninput=e=>hMetricRows[i].value=e.target.value;
+    row.querySelector(".hm-unit").oninput=e=>hMetricRows[i].unit=e.target.value;
+    row.querySelector(".hm-rm").onclick=()=>{hMetricRows.splice(i,1);renderHMetrics();};
+  });
+}
+function collectHMetrics(){return hMetricRows.filter(m=>(m.label||"").trim()||(m.value||"").trim());}
+async function hAiAnalyze(auto){
+  if(!curHealthPhoto){if(!auto)toast("먼저 결과 사진을 넣어주세요");return;}
+  if(!geminiKey()){
+    const note=document.getElementById("hAiNote");
+    note.style.display="block";note.style.color="var(--amber)";
+    note.innerHTML="🔑 사진 자동 인식을 켜려면 <b>설정(⚙️) → Gemini API 키</b>를 한 번만 넣어주세요. (무료: aistudio.google.com/apikey)";
+    if(!auto){openOverlay("menuSheet");renderGeminiUI();}
+    return;
+  }
+  const btn=document.getElementById("hAiBtn");btn.disabled=true;btn.textContent="🔍 인식 중…";
+  const typeName=HEALTH_TYPES[curHealthType].name;
+  const prompt=`이 사진은 ${typeName} 결과지야. 표의 항목과 수치를 정확히 읽어 아래 JSON만 출력(설명 금지):
+{"date":"YYYY-MM-DD 또는 빈문자열","weight":체중kg숫자또는null,"bodyFatPct":체지방률퍼센트숫자또는null,"skeletalMuscle":골격근량kg숫자또는null,"metrics":[{"label":"항목명(한국어)","value":"값","unit":"단위","status":"높음|정상|낮음 또는 빈문자열"}],"advice":"핵심 요약과 생활습관 권장사항 2~4문장(한국어). 진단 단정 금지, 이상수치는 의사 상담 권유."}
+체중·체지방률·골격근량은 있으면 숫자로, 없으면 null. metrics에는 사진의 주요 측정값(혈압·공복혈당·콜레스테롤·중성지방·BMI·내장지방 등)을 담아.`;
+  const r=await geminiVisionJSON(curHealthPhoto.data,prompt);
+  btn.disabled=false;btn.textContent="✨ AI로 내용 인식·분석";
+  if(!r||r.__nokey)return;
+  if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date))document.getElementById("hDate").value=r.date;
+  if(r.weight!=null)document.getElementById("hWeight").value=r.weight;
+  if(r.bodyFatPct!=null)document.getElementById("hBodyFat").value=r.bodyFatPct;
+  if(r.skeletalMuscle!=null)document.getElementById("hMuscle").value=r.skeletalMuscle;
+  if(Array.isArray(r.metrics))hMetricRows=r.metrics.map(m=>({label:m.label||"",value:(m.value!=null?String(m.value):""),unit:m.unit||"",status:m.status||""}));
+  renderHMetrics();
+  if(r.advice)document.getElementById("hAdvice").value=r.advice;
+  const note=document.getElementById("hAiNote");
+  note.style.display="block";note.style.color="var(--amber)";
+  note.textContent="⚠️ AI가 읽은 추정값이에요 — 숫자 확인·보정 후 저장하세요 (진단 아님, 의사 상담 권장)";
+  toast("✨ 인식 완료 — 확인 후 저장하세요");
+}
+async function openHealthSheet(rec){
+  editHealthId=rec?rec.id:null;
+  curHealthType=(rec&&rec.type)||"inbody";
+  document.getElementById("healthSheetTitle").textContent=rec?"검사 기록 수정":"검사 기록";
+  setHealthTypePick();
+  document.getElementById("hDate").value=(rec&&rec.date)||todayStr();
+  document.getElementById("hWeight").value=rec&&rec.weight!=null?rec.weight:"";
+  document.getElementById("hBodyFat").value=rec&&rec.bodyFatPct!=null?rec.bodyFatPct:"";
+  document.getElementById("hMuscle").value=rec&&rec.skeletalMuscle!=null?rec.skeletalMuscle:"";
+  hMetricRows=rec&&Array.isArray(rec.metrics)?rec.metrics.map(m=>({...m})):[];
+  renderHMetrics();
+  document.getElementById("hAdvice").value=(rec&&rec.advice)||"";
+  document.getElementById("hMemo").value=(rec&&rec.memo)||"";
+  document.getElementById("hAiNote").style.display="none";
+  curHealthPhoto=null;renderHealthPhoto();
+  if(rec&&rec.photoId){const d=await idbGet(rec.photoId);if(d){curHealthPhoto={id:rec.photoId,data:d};renderHealthPhoto();}}
+  document.getElementById("healthDelete").style.display=rec?"block":"none";
+  openOverlay("healthSheet");
+}
+async function saveHealth(){
+  const date=document.getElementById("hDate").value||todayStr();
+  const weight=num("hWeight")||null,bodyFatPct=num("hBodyFat")||null,skeletalMuscle=num("hMuscle")||null;
+  const metrics=collectHMetrics();
+  const advice=document.getElementById("hAdvice").value.trim();
+  const memo=document.getElementById("hMemo").value.trim();
+  if(!weight&&!bodyFatPct&&!skeletalMuscle&&!metrics.length&&!curHealthPhoto){toast("사진을 넣거나 값을 입력해주세요");return;}
+  const old=editHealthId?state.health.find(x=>x.id===editHealthId):null;
+  let photoId=old?old.photoId||null:null;const oldP=photoId;
+  if(curHealthPhoto){if(!curHealthPhoto.id){curHealthPhoto.id=genPid();try{await idbPut(curHealthPhoto.id,curHealthPhoto.data);}catch(e){toast("사진 저장 실패");return;}}photoId=curHealthPhoto.id;}else photoId=null;
+  if(oldP&&oldP!==photoId)idbDel(oldP);
+  const rec={type:curHealthType,date,weight,bodyFatPct,skeletalMuscle,metrics,advice,memo,photoId,updatedAt:Date.now()};
+  if(editHealthId){Object.assign(old,rec);}
+  else state.health.push(Object.assign({id:uid(),createdAt:Date.now()},rec));
+  if(weight){const ex=(state.weights||[]).find(w=>w.date===date);const v=Math.round(weight*10)/10;if(ex)ex.kg=v;else state.weights.push({date,kg:v,createdAt:Date.now()});}
+  save();closeOverlay("healthSheet");renderHealth();renderBody();if(curTab==="stats")renderStats();toast(editHealthId?"수정했어요":(weight?"저장 · 체중 연동됨":"저장했어요"));
+}
+function deleteHealth(){
+  if(!editHealthId)return;
+  if(!confirm("이 검사 기록을 삭제할까요?"))return;
+  const h=state.health.find(x=>x.id===editHealthId);if(h&&h.photoId)idbDel(h.photoId);
+  state.health=state.health.filter(x=>x.id!==editHealthId);
+  save();closeOverlay("healthSheet");renderHealth();toast("삭제했어요");
+}
+function bfTrendSVG(){
+  const arr=(state.health||[]).filter(h=>h.bodyFatPct!=null).slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-14);
+  if(!arr.length)return `<div class="chart-empty">인바디 기록(체지방률)이 쌓이면 추이가 그려져요</div>`;
+  let pts=arr.map(h=>+h.bodyFatPct);if(pts.length===1)pts=[pts[0],pts[0]];
+  const W=Math.max(320,pts.length*40),H=180,pad=30;
+  let mn=Math.min(...pts),mx=Math.max(...pts);if(mn===mx){mn-=1;mx+=1;}
+  const x=i=>pad+i*((W-pad*2)/(pts.length-1));
+  const y=v=>pad+(1-(v-mn)/(mx-mn))*(H-pad*2);
+  let d="",dots="";
+  pts.forEach((v,i)=>{d+=(i?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" ";dots+=`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="#ef4444"></circle>`;});
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><path d="${d}" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>${dots}<text x="6" y="${pad+4}" font-size="10" fill="var(--muted)">${mx}%</text><text x="6" y="${H-pad+8}" font-size="10" fill="var(--muted)">${mn}%</text></svg>`;
+}
+function renderHealth(){
+  const recs=(state.health||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||0)-(a.createdAt||0));
+  const lastBf=recs.find(h=>h.bodyFatPct!=null),lastMu=recs.find(h=>h.skeletalMuscle!=null);
+  const eBf=document.getElementById("hLastBf");if(!eBf)return;
+  eBf.textContent=lastBf?lastBf.bodyFatPct+"%":"-";
+  document.getElementById("hLastMuscle").textContent=lastMu?lastMu.skeletalMuscle+"kg":"-";
+  document.getElementById("hCnt").textContent=recs.length;
+  document.getElementById("hBfTrend").innerHTML=bfTrendSVG();
+  const el=document.getElementById("healthList");
+  if(!recs.length){el.innerHTML=`<div class="empty"><span class="em">🩺</span>검사 기록이 없어요.<br>+ 버튼으로 인바디·검진 결과 사진을 올려보세요.</div>`;return;}
+  el.innerHTML=recs.map(h=>{
+    const T=HEALTH_TYPES[h.type]||HEALTH_TYPES.inbody;
+    const chips=[];
+    if(h.weight!=null)chips.push(`체중 ${h.weight}kg`);
+    if(h.bodyFatPct!=null)chips.push(`체지방 ${h.bodyFatPct}%`);
+    if(h.skeletalMuscle!=null)chips.push(`골격근 ${h.skeletalMuscle}kg`);
+    (h.metrics||[]).slice(0,5).forEach(m=>{if(m.label&&m.value)chips.push(`${esc(m.label)} ${esc(m.value)}${esc(m.unit||"")}`);});
+    return `<div class="health-card" data-id="${h.id}"><div class="hc-top"><span class="hc-type">${T.icon} ${T.name}</span><span class="hc-date">${fmtKDate(h.date)}${h.photoId?" · 📷":""}</span></div><div class="hc-metrics">${chips.length?chips.map(c=>`<span>${c}</span>`).join(""):'<span>측정값 없음</span>'}</div>${h.advice?`<div style="font-size:12px;color:var(--muted);margin-top:7px;line-height:1.5">💬 ${esc(h.advice)}</div>`:""}</div>`;
+  }).join("");
+  el.querySelectorAll(".health-card").forEach(c=>c.onclick=()=>{const h=state.health.find(x=>x.id===c.dataset.id);if(h)openHealthSheet(h);});
 }
 
 /* ===================== 운동 입력 시트 ===================== */
@@ -1417,6 +1644,7 @@ function mergeRemote(remote,remoteSavedAt){
   state.meals=_mergeById(state.meals,r.meals);
   state.workouts=_mergeById(state.workouts,r.workouts);
   state.weights=_mergeByKey(state.weights,r.weights,"date");
+  state.health=_mergeById(state.health,r.health);
   state.notified=Object.assign({},r.notified||{},state.notified||{});
   // 설정값(goals): 더 최근에 저장된 쪽 우선
   if((remoteSavedAt||0)>(state._savedAt||0)&&r.goals)state.goals=r.goals;
@@ -1519,11 +1747,14 @@ function init(){
   document.getElementById("tabDiet").onclick=()=>switchTab("diet");
   document.getElementById("tabWorkout").onclick=()=>switchTab("workout");
   document.getElementById("tabBody").onclick=()=>switchTab("body");
+  document.getElementById("tabHealth").onclick=()=>switchTab("health");
   document.getElementById("tabStats").onclick=()=>switchTab("stats");
   // FAB — 현재 탭에 맞는 입력
   document.getElementById("addBtn").onclick=()=>{
     if(curTab==="diet")openMealSheet(curMealDefault(),null);
     else if(curTab==="workout")openWorkoutSheet(null);
+    else if(curTab==="health")openHealthSheet(null);
+    else if(curTab==="body")openWeightSheet(todayStr());
     else openWeightSheet(todayStr());
   };
   // 날짜 이동
@@ -1557,6 +1788,13 @@ function init(){
   document.getElementById("woVideoInput").onchange=e=>{if(e.target.files[0])setWorkoutVideoFromFile(e.target.files[0]);e.target.value="";};
   document.getElementById("vvClose").onclick=closeVidViewer;
   document.getElementById("vidViewer").onclick=e=>{if(e.target.id==="vidViewer")closeVidViewer();};
+  // 건강검진 시트
+  document.getElementById("hPhotoInput").onchange=e=>{if(e.target.files[0])setHealthPhotoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("hCamInput").onchange=e=>{if(e.target.files[0])setHealthPhotoFromFile(e.target.files[0]);e.target.value="";};
+  document.getElementById("hAiBtn").onclick=()=>hAiAnalyze(false);
+  document.getElementById("hAddMetric").onclick=()=>{hMetricRows.push({label:"",value:"",unit:"",status:""});renderHMetrics();};
+  document.getElementById("healthSave").onclick=saveHealth;
+  document.getElementById("healthDelete").onclick=deleteHealth;
   // GPS 야외 운동
   document.getElementById("gpsOpenBtn").onclick=openGpsSheet;
   document.getElementById("gpsStart").onclick=gpsStartPause;
@@ -1572,7 +1810,7 @@ function init(){
   document.getElementById("mExport").onclick=exportData;
   document.getElementById("mImport").onclick=()=>document.getElementById("importFile").click();
   document.getElementById("importFile").onchange=e=>{if(e.target.files[0])importData(e.target.files[0]);};
-  document.getElementById("mReset").onclick=()=>{if(confirm("정말 모든 데이터를 삭제할까요? 복구할 수 없습니다.")){state={meals:[],workouts:[],weights:[],goals:{},notified:{}};save();renderAll();toast("초기화했어요");closeMenu();}};
+  document.getElementById("mReset").onclick=()=>{if(confirm("정말 모든 데이터를 삭제할까요? 복구할 수 없습니다.")){state={meals:[],workouts:[],weights:[],goals:{},notified:{},health:[]};save();renderAll();toast("초기화했어요");closeMenu();}};
 
   // 앱 잠금 + Face ID
   document.getElementById("mLock").onclick=setupLock;
