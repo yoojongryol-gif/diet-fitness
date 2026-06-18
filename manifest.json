@@ -1,0 +1,14 @@
+{
+  "name": "식단·운동 관리",
+  "short_name": "식단운동",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f4f8",
+  "theme_color": "#ffffff",
+  "lang": "ko",
+  "icons": [
+    {"src": "apple-touch-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "apple-touch-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

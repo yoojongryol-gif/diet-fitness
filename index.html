@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.17h-->
+<!--APPVER:2026.06.18a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -13,6 +13,8 @@
 <meta name="theme-color" content="#ffffff">
 <title>식단·운동 관리</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer crossorigin=""></script>
@@ -586,7 +588,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.17h";
+const APP_VER="2026.06.18a";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
