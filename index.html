@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.18a-->
+<!--APPVER:2026.06.18b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -549,7 +549,8 @@
 
     <h3 style="margin-top:22px">🔒 보안</h3>
     <div class="menu-item" id="mLock"><span class="mi">🔒</span><span id="mLockLabel">앱 잠금 (암호) 설정</span></div>
-    <p style="color:var(--muted);font-size:12px;margin:6px 2px 0;line-height:1.6">암호(4~6자리) + Face ID/지문으로 앱을 잠글 수 있어요. 식단·체중 등 개인정보 보호용.</p>
+    <div class="menu-item" id="mLockMode"><span class="mi">🔑</span><span id="mLockModeLabel">잠금 방식: 비밀번호</span></div>
+    <p style="color:var(--muted);font-size:12px;margin:6px 2px 0;line-height:1.6">암호(4~6자리) 또는 Face ID/지문으로 앱을 잠글 수 있어요. 잠금 방식에서 원하는 해제 방법을 고르세요.</p>
 
     <h3 style="margin-top:22px">📦 데이터</h3>
     <div class="menu-item" id="mExport"><span class="mi">⬇️</span>파일로 내보내기</div>
@@ -568,8 +569,8 @@
   <div style="font-size:52px">🔒</div>
   <div style="font-size:16px;font-weight:700;margin:14px 0 18px">암호를 입력하세요</div>
   <input id="lockInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" style="width:170px;text-align:center;font-size:24px;letter-spacing:8px;padding:12px" placeholder="••••">
-  <button class="save-btn" id="lockBtn" style="max-width:200px">잠금 해제</button>
   <button class="save-btn" id="lockBioBtn" style="max-width:200px;display:none;background:transparent;border:1px solid var(--accent);color:var(--accent);margin-top:10px">🙂 Face ID / 지문으로 해제</button>
+  <button id="lockPinFallback" style="display:none;background:none;border:none;color:var(--muted);font-size:13px;margin-top:14px;text-decoration:underline">비밀번호로 잠금 해제</button>
   <div id="lockMsg" style="font-size:12px;color:var(--red);margin-top:10px;min-height:16px"></div>
 </div>
 
@@ -588,7 +589,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.18a";
+const APP_VER="2026.06.18b";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -1735,11 +1736,48 @@ async function bioUnlock(){
     if(a){document.getElementById("lockScreen").style.display="none";document.getElementById("lockMsg").textContent="";}
   }catch(e){document.getElementById("lockMsg").textContent="생체인증 취소됨 — 암호로 해제하세요";}
 }
-function showLock(){if(!lockIsOn())return;const ls=document.getElementById("lockScreen");if(!ls)return;ls.style.display="flex";document.getElementById("lockInput").value="";document.getElementById("lockMsg").textContent="";const bb=document.getElementById("lockBioBtn");if(bb)bb.style.display=bioIsOn()?"block":"none";setTimeout(()=>{try{document.getElementById("lockInput").focus();}catch(e){}},150);}
+function lockMode(){return localStorage.getItem("app.lock.mode")||(bioIsOn()?"bio":"pin");}
+function showLock(){
+  if(!lockIsOn())return;
+  const ls=document.getElementById("lockScreen");if(!ls)return;
+  ls.style.display="flex";
+  document.getElementById("lockInput").value="";document.getElementById("lockMsg").textContent="";
+  const bb=document.getElementById("lockBioBtn"),pin=document.getElementById("lockInput"),fb=document.getElementById("lockPinFallback");
+  if(lockMode()==="bio"&&bioIsOn()){
+    // 생체인증 우선: 비번칸 숨기고 자동으로 Face ID, '비밀번호로 풀기' 대체 제공
+    pin.style.display="none";if(bb)bb.style.display="block";if(fb)fb.style.display="block";
+    setTimeout(()=>{try{bioUnlock();}catch(e){}},300);
+  }else{
+    // 비밀번호: 비번칸만, 맞으면 자동 해제
+    pin.style.display="block";if(bb)bb.style.display="none";if(fb)fb.style.display="none";
+    setTimeout(()=>{try{pin.focus();}catch(e){}},150);
+  }
+}
+function showPinFallback(){const pin=document.getElementById("lockInput"),fb=document.getElementById("lockPinFallback");pin.style.display="block";if(fb)fb.style.display="none";setTimeout(()=>{try{pin.focus();}catch(e){}},100);}
+async function chooseLockMode(){
+  if(!lockIsOn()){toast("먼저 앱 잠금을 설정하세요");return;}
+  if(!await bioAvailable()){localStorage.setItem("app.lock.mode","pin");renderLockModeUI();toast("이 기기는 생체인증을 지원하지 않아 비밀번호만 사용해요");return;}
+  const useBio=confirm("잠금 해제 방식을 선택하세요.\n\n[확인] 생체인증 (Face ID·지문)\n[취소] 비밀번호");
+  if(useBio){
+    if(!bioIsOn()){if(!await registerBio()){toast("생체인증 등록이 취소됐어요");return;}}
+    localStorage.setItem("app.lock.mode","bio");toast("🙂 생체인증으로 잠금 해제합니다");
+  }else{localStorage.setItem("app.lock.mode","pin");toast("🔢 비밀번호로 잠금 해제합니다");}
+  renderLockModeUI();
+}
+function renderLockModeUI(){const el=document.getElementById("mLockModeLabel");if(el)el.textContent="잠금 방식: "+(lockMode()==="bio"?"생체인증(Face ID·지문)":"비밀번호");}
 async function tryUnlock(){
   const pin=document.getElementById("lockInput").value;
   if(await hashPin(pin)===localStorage.getItem("app.lock")){document.getElementById("lockScreen").style.display="none";document.getElementById("lockMsg").textContent="";}
   else{document.getElementById("lockMsg").textContent="암호가 틀렸어요";document.getElementById("lockInput").value="";try{document.getElementById("lockInput").focus();}catch(e){}}
+}
+// 비번이 맞는 순간 자동 해제 (버튼 없이). 입력 중 틀린 단계에선 에러 안 띄움
+async function autoUnlockCheck(){
+  const pin=document.getElementById("lockInput").value;
+  if(pin.length<4)return;
+  if(await hashPin(pin)===localStorage.getItem("app.lock")){
+    document.getElementById("lockScreen").style.display="none";
+    document.getElementById("lockMsg").textContent="";
+  }
 }
 async function setupLock(){
   if(lockIsOn()){
@@ -1839,9 +1877,12 @@ function init(){
 
   // 앱 잠금 + Face ID
   document.getElementById("mLock").onclick=setupLock;
-  document.getElementById("lockBtn").onclick=tryUnlock;
+  document.getElementById("mLockMode").onclick=()=>chooseLockMode();
   document.getElementById("lockBioBtn").onclick=bioUnlock;
+  document.getElementById("lockPinFallback").onclick=showPinFallback;
   document.getElementById("lockInput").addEventListener("keydown",e=>{if(e.key==="Enter")tryUnlock();});
+  document.getElementById("lockInput").addEventListener("input",autoUnlockCheck);
+  renderLockModeUI();
   document.addEventListener("visibilitychange",()=>{if(document.hidden)_lockHiddenAt=Date.now();else if(lockIsOn()&&_lockHiddenAt&&Date.now()-_lockHiddenAt>120000)showLock();});
   renderLockUI();
 
