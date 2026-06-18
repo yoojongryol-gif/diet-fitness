@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.18b-->
+<!--APPVER:2026.06.19a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -589,7 +589,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.18b";
+const APP_VER="2026.06.19a";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -665,15 +665,16 @@ function num(id){const v=parseFloat(document.getElementById(id).value);return is
 let toastT;function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2000);}
 
 /* ===================== 사진 ===================== */
-function resizeImage(file){
+function resizeImage(file,max,q){
+  max=max||1080;q=q||0.72;
   return new Promise(res=>{
     const r=new FileReader();
     r.onload=e=>{const img=new Image();img.onload=()=>{
-      const max=1080;let{width:w,height:h}=img;
+      let{width:w,height:h}=img;
       if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;
       cv.getContext("2d").drawImage(img,0,0,w,h);
-      res(cv.toDataURL("image/jpeg",0.72));
+      res(cv.toDataURL("image/jpeg",q));
     };img.src=e.target.result;};
     r.readAsDataURL(file);
   });
@@ -1046,7 +1047,8 @@ function renderHealthPhoto(){
   }
 }
 async function setHealthPhotoFromFile(file){
-  try{curHealthPhoto={id:null,data:await resizeImage(file)};renderHealthPhoto();hAiAnalyze(true);}catch(e){toast("사진 처리 실패");}
+  // 인바디·검진지는 작은 숫자가 빽빽 → 고해상도로 처리해 인식률↑
+  try{curHealthPhoto={id:null,data:await resizeImage(file,1600,0.85)};renderHealthPhoto();hAiAnalyze(true);}catch(e){toast("사진 처리 실패");}
 }
 function renderHMetrics(){
   const el=document.getElementById("hMetrics");
@@ -1077,6 +1079,15 @@ async function hAiAnalyze(auto){
   const r=await geminiVisionJSON(curHealthPhoto.data,prompt);
   btn.disabled=false;btn.textContent="✨ AI로 내용 인식·분석";
   if(!r||r.__nokey)return;
+  // 아무 수치도 못 읽었으면(사진 흐림/빛반사 등) 명확히 안내
+  const got=(r.weight!=null)||(r.bodyFatPct!=null)||(r.skeletalMuscle!=null)||(Array.isArray(r.metrics)&&r.metrics.length>0);
+  if(!got){
+    const note=document.getElementById("hAiNote");
+    note.style.display="block";note.style.color="var(--red)";
+    note.innerHTML="📷 사진에서 수치를 읽지 못했어요.<br>① 빛 반사·그림자 없이 <b>정면에서 또렷하게</b> 다시 촬영하거나<br>② 아래에서 <b>직접 입력</b>해 주세요. (양식 제한 없음 — 글자만 선명하면 인식됩니다)";
+    toast("인식 실패 — 더 또렷한 사진 권장");
+    return;
+  }
   if(r.date&&/^\d{4}-\d{2}-\d{2}$/.test(r.date))document.getElementById("hDate").value=r.date;
   if(r.weight!=null)document.getElementById("hWeight").value=r.weight;
   if(r.bodyFatPct!=null)document.getElementById("hBodyFat").value=r.bodyFatPct;
