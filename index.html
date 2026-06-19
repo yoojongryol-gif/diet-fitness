@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.19a-->
+<!--APPVER:2026.06.19b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -522,7 +522,7 @@
     <label class="fld">Gemini API 키</label>
     <input id="geminiKeyInput" type="password" placeholder="AI Studio에서 발급한 키" autocomplete="off">
     <label class="fld">모델 (선택)</label>
-    <input id="geminiModelInput" placeholder="gemini-flash-latest" autocomplete="off">
+    <input id="geminiModelInput" placeholder="gemini-2.5-flash" autocomplete="off">
     <button class="save-btn" id="geminiSave" style="margin-top:12px">AI 키 저장</button>
     <p style="color:var(--muted);font-size:12px;margin-top:10px;line-height:1.6">키는 <b>이 기기에만</b> 저장돼요(서버·코드에 포함 안 됨). <b>aistudio.google.com/apikey</b>에서 무료로 발급할 수 있어요.</p>
 
@@ -589,7 +589,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.19a";
+const APP_VER="2026.06.19b";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -956,29 +956,44 @@ function deleteMeal(){
 
 /* ===================== AI 음식 추정 (Gemini Vision) ===================== */
 function geminiKey(){return localStorage.getItem("gemini.key")||"";}
-function geminiModel(){return localStorage.getItem("gemini.model")||"gemini-flash-latest";}
-async function estimateFoodFromPhoto(dataUrl){
+function geminiModel(){return localStorage.getItem("gemini.model")||"gemini-2.5-flash";}
+/* 공용 Gemini 호출 — 일시적 오류(503 혼잡/429 한도/500)에 재시도+백오프, 모델 폴백.
+   gemini-flash-latest가 간헐적으로 503을 내서 "한번은 되고 두번은 안되는" 문제 해결. */
+async function geminiCallJSON(body){
   const key=geminiKey();
-  if(!key){return null;}
+  if(!key)return {nokey:true};
+  const models=[...new Set([geminiModel(),"gemini-2.5-flash","gemini-flash-latest"])];
+  let last="";
+  for(const mo of models){
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${mo}:generateContent?key=${encodeURIComponent(key)}`,
+          {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        if(r.status===503||r.status===429||r.status===500){
+          last="혼잡(HTTP "+r.status+")";
+          await new Promise(s=>setTimeout(s,1000*(attempt+1)));
+          continue; // 같은 모델 재시도
+        }
+        if(!r.ok){last=mo+" HTTP "+r.status;break;} // 비일시적 → 다음 모델
+        const j=await r.json();
+        let txt=(((j.candidates||[])[0]||{}).content||{}).parts;txt=txt&&txt[0]&&txt[0].text;
+        if(!txt){last=mo+" 빈 응답";break;}
+        return {data:JSON.parse(txt.replace(/```json|```/g,"").trim())};
+      }catch(e){last=mo+" "+String(e).slice(0,50);break;}
+    }
+  }
+  return {err:last};
+}
+async function estimateFoodFromPhoto(dataUrl){
+  if(!geminiKey())return null;
   const b64=dataUrl.split(",")[1];
   const mime=(dataUrl.match(/data:([^;]+);/)||[])[1]||"image/jpeg";
   const prompt='이 사진의 음식을 분석해 1인분 기준 영양정보를 추정해줘. 반드시 아래 JSON만 출력(설명 금지): {"name":"음식명(한국어)","kcal":숫자,"protein":숫자(g),"carb":숫자(g),"fat":숫자(g),"confidence":0~1사이}. 음식이 아니면 name은 빈 문자열.';
   const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:b64}}]}],generationConfig:{temperature:0.2,responseMimeType:"application/json"}};
-  const models=[...new Set([geminiModel(),"gemini-flash-latest","gemini-2.0-flash-001"])];
-  let last="";
-  for(const mo of models){
-    try{
-      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${mo}:generateContent?key=${encodeURIComponent(key)}`,
-        {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      if(!r.ok){last=mo+" HTTP "+r.status;continue;}
-      const j=await r.json();
-      let txt=(((j.candidates||[])[0]||{}).content||{}).parts;
-      txt=txt&&txt[0]&&txt[0].text;
-      if(!txt){last=mo+" 빈 응답";continue;}
-      return JSON.parse(txt.replace(/```json|```/g,"").trim());
-    }catch(e){last=mo+" "+String(e).slice(0,60);}
-  }
-  toast("AI 분석 실패: "+last);return null;
+  const res=await geminiCallJSON(body);
+  if(res.data)return res.data;
+  toast(res.err&&res.err.indexOf("혼잡")>=0?"AI 서버가 잠시 혼잡해요 — 몇 초 뒤 다시":"AI 분석 실패: "+(res.err||""));
+  return null;
 }
 async function aiAnalyze(auto){
   if(!curMealPhoto){if(!auto)toast("먼저 음식 사진을 넣어주세요");return;}
@@ -1012,23 +1027,15 @@ async function aiAnalyze(auto){
 const HEALTH_TYPES={inbody:{name:"인바디",icon:"💪"},medical:{name:"건강검진",icon:"🩺"}};
 let editHealthId=null,curHealthType="inbody",curHealthPhoto=null,hMetricRows=[];
 async function geminiVisionJSON(dataUrl,prompt){
-  const key=geminiKey();if(!key)return {__nokey:true};
+  if(!geminiKey())return {__nokey:true};
   const b64=dataUrl.split(",")[1];
   const mime=(dataUrl.match(/data:([^;]+);/)||[])[1]||"image/jpeg";
   const body={contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:b64}}]}],generationConfig:{temperature:0.2,responseMimeType:"application/json"}};
-  const models=[...new Set([geminiModel(),"gemini-flash-latest","gemini-2.0-flash-001"])];
-  let last="";
-  for(const mo of models){
-    try{
-      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${mo}:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      if(!r.ok){last=mo+" HTTP "+r.status;continue;}
-      const j=await r.json();
-      let txt=(((j.candidates||[])[0]||{}).content||{}).parts;txt=txt&&txt[0]&&txt[0].text;
-      if(!txt){last=mo+" 빈 응답";continue;}
-      return JSON.parse(txt.replace(/```json|```/g,"").trim());
-    }catch(e){last=mo+" "+String(e).slice(0,60);}
-  }
-  toast("AI 분석 실패: "+last);return null;
+  const res=await geminiCallJSON(body);
+  if(res.nokey)return {__nokey:true};
+  if(res.data)return res.data;
+  toast(res.err&&res.err.indexOf("혼잡")>=0?"AI 서버가 잠시 혼잡해요(503) — 몇 초 뒤 다시 눌러주세요":"AI 분석 실패: "+(res.err||""));
+  return null;
 }
 function setHealthTypePick(){
   document.getElementById("hTypePick").innerHTML=Object.entries(HEALTH_TYPES).map(([k,t])=>`<div class="ex-opt ${curHealthType===k?'sel':''}" data-t="${k}">${t.icon} ${t.name}</div>`).join("");
