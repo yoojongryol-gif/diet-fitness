@@ -265,6 +265,7 @@
     <div class="date-cur" id="workoutDate"></div>
     <button id="nextDayW">›</button>
     <button class="icon-btn today-btn" id="workoutToday">오늘</button>
+    <button class="icon-btn" id="watchImportBtn" title="애플워치 가져오기">⌚</button>
   </div>
   <div class="summary">
     <div class="card burn"><div class="num" id="sumWBurn">0</div><div class="lbl">소모 kcal</div></div>
@@ -1946,6 +1947,57 @@ function init(){
   showLock();                                              // 잠금이 켜져 있으면 잠금 화면 표시
 }
 init();
+
+/* ===================== 애플워치 연동 (2026-07-03) =====================
+   PWA는 HealthKit 직접 접근 불가 → 아이폰 단축어(Shortcuts)가 건강앱 데이터를
+   URL(#watch=<URL인코딩 JSON>)로 전달 → 여기서 수신해 기록.
+   payload 예: {"workouts":[{"date":"2026-07-03","type":"걷기","minutes":32,
+                "kcal":180,"distance":2400}],"weight":{"date":"2026-07-03","kg":78.5}}
+   중복방지: 같은 (date|type|minutes|kcal) 워치 기록은 재가져와도 스킵. */
+function importWatchData(payload){
+  let added=0, skipped=0;
+  const ws=Array.isArray(payload.workouts)?payload.workouts:[];
+  for(const w of ws){
+    const date=(w.date||todayStr()).slice(0,10);
+    const minutes=Math.max(1,Math.round(+w.minutes||0));
+    if(!minutes){skipped++;continue;}
+    const kcal=Math.round(+w.kcal||0)||null;
+    const type=(w.type||"운동").toString().slice(0,20);
+    const wid=[date,type,minutes,kcal].join("|");
+    if(state.workouts.some(x=>x.src==="watch"&&x.wid===wid)){skipped++;continue;}
+    state.workouts.push({id:uid(),date,type,minutes,sets:null,
+      kcalBurned:kcal||estBurn(type,minutes,bodyWeight(date)),
+      distance:w.distance?Math.round(+w.distance):undefined,
+      memo:"⌚ 애플워치",src:"watch",wid,createdAt:Date.now()});
+    added++;
+  }
+  if(payload.weight&&+payload.weight.kg){
+    const d=(payload.weight.date||todayStr()).slice(0,10), v=Math.round(+payload.weight.kg*10)/10;
+    const ex=(state.weights||[]).find(x=>x.date===d);
+    if(ex)ex.kg=v;else state.weights.push({date:d,kg:v,createdAt:Date.now()});
+  }
+  if(added||payload.weight){save();renderAll();}
+  toast(added?`⌚ 워치 운동 ${added}건 가져옴`+(skipped?` (중복 ${skipped} 제외)`:""):"⌚ 새 기록 없음"+(skipped?` (중복 ${skipped})`:""));
+}
+function checkWatchImport(){
+  try{
+    const h=location.hash||"";
+    const m=h.match(/#watch=(.+)/);
+    if(!m)return;
+    history.replaceState(null,"",location.pathname+location.search); // 해시 제거(재가져오기 방지)
+    const payload=JSON.parse(decodeURIComponent(m[1]));
+    importWatchData(payload);
+  }catch(e){toast("워치 데이터 형식 오류");}
+}
+(function(){
+  const b=document.getElementById("watchImportBtn");
+  if(b)b.onclick=()=>{
+    const t=prompt("애플워치 데이터(JSON)를 붙여넣으세요.\n(단축어가 자동으로 넣어주는 게 기본 — 이건 수동 백업 경로)");
+    if(!t)return;
+    try{importWatchData(JSON.parse(t));}catch(e){toast("JSON 형식 오류");}
+  };
+  checkWatchImport();
+})();
 </script>
 </body>
 </html>
