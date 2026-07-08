@@ -278,7 +278,7 @@
     <button id="woNextM">›</button>
   </div>
   <div id="woCalendar"></div>
-  <div class="sec-head"><div class="sec-title">🏃 오늘 운동</div><div style="display:flex;gap:6px"><button class="gps-start-btn" id="aiSquatBtn">🤖 AI 스쿼트</button><button class="gps-start-btn" id="gpsOpenBtn">🛰 야외 운동(GPS)</button></div></div>
+  <div class="sec-head"><div class="sec-title">🏃 오늘 운동</div><div style="display:flex;gap:6px"><button class="gps-start-btn" id="aiSquatBtn">🤖 AI 운동</button><button class="gps-start-btn" id="gpsOpenBtn">🛰 야외 운동(GPS)</button></div></div>
   <div id="workoutList"></div>
 </div>
 
@@ -461,7 +461,23 @@
 <div class="overlay" id="aiSheet">
   <div class="sheet" style="max-height:96vh">
     <div class="grab"></div>
-    <h3>🤖 AI 스쿼트 카운터</h3>
+    <h3>🤖 AI 운동 코치</h3>
+    <!-- 루틴 세팅 (시작 전) -->
+    <div id="aiSetup">
+      <div style="font-size:13px;color:var(--sub,#888);margin:4px 0 8px">오늘 운동을 미리 세팅하세요. 동작·횟수·세트 순서대로 음성 코칭과 함께 자동 카운팅됩니다.</div>
+      <div id="aiRoutineRows"></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button id="aiAddRow" style="flex:1;background:var(--card,#333);border:1px dashed var(--sub,#666);border-radius:10px;padding:10px;color:inherit">＋ 동작 추가</button>
+      </div>
+      <div class="gps-actions" style="margin-top:10px">
+        <button id="aiStartRoutine" style="background:var(--green)">▶ 루틴 시작</button>
+        <button id="aiFreeMode" style="background:var(--accent2,#3b82f6)">스쿼트 자유 카운트</button>
+      </div>
+      <div style="font-size:11px;color:var(--sub,#888);margin-top:8px;text-align:center">📐 폰은 <b>측면 45°</b>에 세워두세요 — 팔굽혀펴기·버피까지 한 각도로 인식됩니다</div>
+    </div>
+    <!-- 운동 화면 -->
+    <div id="aiWork" style="display:none">
+    <div id="aiExLabel" style="text-align:center;font-weight:700;margin:2px 0 6px">-</div>
     <div id="aiStage" style="position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden">
       <video id="aiVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
       <canvas id="aiCanvas" style="position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)"></canvas>
@@ -469,14 +485,15 @@
       <div id="aiHint" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">카메라 준비 중…</div>
     </div>
     <div class="gps-stats" style="margin-top:10px">
-      <div class="gps-stat"><div class="gv" id="aiReps">0</div><div class="gl">개수</div></div>
+      <div class="gps-stat"><div class="gv" id="aiReps">0</div><div class="gl">이번 세트</div></div>
+      <div class="gps-stat"><div class="gv" id="aiSetLbl">-</div><div class="gl">세트</div></div>
       <div class="gps-stat"><div class="gv" id="aiTime">00:00</div><div class="gl">시간</div></div>
-      <div class="gps-stat"><div class="gv" id="aiDepth">-</div><div class="gl">최저 무릎각</div></div>
     </div>
     <div class="gps-actions" style="margin-top:10px">
       <button id="aiSaveBtn" style="background:var(--green)">💾 저장하고 종료</button>
       <button id="aiCloseBtn" style="background:var(--red)">✕ 닫기</button>
     </div>
+    </div><!-- /aiWork -->
     <div style="font-size:11px;color:var(--sub,#888);margin-top:8px;text-align:center">전신이 화면에 나오게 폰을 세워두세요 · 측정값은 참고용이며 의료 진단이 아닙니다</div>
   </div>
 </div>
@@ -654,7 +671,7 @@ function idbAll(){return idbOpen().then(db=>new Promise((res)=>{const out={};con
 function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 
 /* ===================== 저장 ===================== */
-function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];}
+function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];state.aiRoutine=state.aiRoutine||[{ex:"스쿼트",reps:10,sets:3}];}
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d){state=d;normalizeState();}}catch(e){}}
 function save(){state._savedAt=Date.now();localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
 
@@ -1672,14 +1689,62 @@ function gpsStop(){
 }
 function gpsAbort(){gpsCleanup();closeOverlay("gpsSheet");}
 
-/* ===================== AI 스쿼트 카운터 (MediaPipe Pose) ===================== */
-const ai={lm:null,stream:null,raf:0,on:false,reps:0,phase:"up",minKnee:180,startAt:0,timer:0,lastBeep:0};
-function aiAngle(a,b,c){ // b가 꼭짓점인 각도
+/* ===================== AI 운동 코치 v2 — 루틴 모드 + 음성 (MediaPipe Pose) ===================== */
+const AI_EX_LIST=["스쿼트","점프 스쿼트","런지","점프 런지","팔굽혀펴기","버피"];
+const ai={lm:null,stream:null,raf:0,on:false,reps:0,startAt:0,timer:0,
+  routine:[],ri:0,setNo:1,target:0,mode:"work",log:{},restT:0,restIv:0,exState:null};
+
+function aiAngle(a,b,c){
   const v1=[a.x-b.x,a.y-b.y],v2=[c.x-b.x,c.y-b.y];
   const dot=v1[0]*v2[0]+v1[1]*v2[1];
   const m=Math.hypot(...v1)*Math.hypot(...v2)||1e-6;
   return Math.acos(Math.min(1,Math.max(-1,dot/m)))*180/Math.PI;
 }
+function aiVis(l,i){return (l[i].visibility??1)>0.5;}
+function aiKnee(l){
+  const ps=[[23,25,27],[24,26,28]].filter(p=>p.every(i=>aiVis(l,i)));
+  return ps.length?ps.reduce((s,p)=>s+aiAngle(l[p[0]],l[p[1]],l[p[2]]),0)/ps.length:null;
+}
+function aiElbow(l){
+  const ps=[[11,13,15],[12,14,16]].filter(p=>p.every(i=>aiVis(l,i)));
+  return ps.length?ps.reduce((s,p)=>s+aiAngle(l[p[0]],l[p[1]],l[p[2]]),0)/ps.length:null;
+}
+function aiTorsoHoriz(l){ // 어깨-엉덩이 라인이 수평(플랭크/푸시업 자세)
+  if(![11,12,23,24].every(i=>aiVis(l,i)))return false;
+  const sh={x:(l[11].x+l[12].x)/2,y:(l[11].y+l[12].y)/2},hp={x:(l[23].x+l[24].x)/2,y:(l[23].y+l[24].y)/2};
+  return Math.abs(sh.x-hp.x)>Math.abs(sh.y-hp.y)*1.2;
+}
+function aiStanceSplit(l){ // 런지: 발이 앞뒤로 벌어짐 (측면 기준 x 분리)
+  if(![27,28,11,12].every(i=>aiVis(l,i)))return false;
+  const sw=Math.abs(l[11].x-l[12].x)||0.08;
+  return Math.abs(l[27].x-l[28].x)>sw*1.1;
+}
+/* 동작별 카운터: mk()=상태 생성, step(state, landmarks, hintFn) → "rep" | undefined */
+const AI_DET={
+  "스쿼트":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiKnee(l);if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
+    if(s.ph==="up"&&k<105)s.ph="down";
+    else if(s.ph==="down"&&k>155){s.ph="up";return "rep";}
+    H(s.ph==="down"?"일어나세요!":(k<150?"조금 더 깊이!":`무릎 ${Math.round(k)}°`));}},
+  "런지":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiKnee(l);if(k==null)return H("하체가 안 보여요");
+    if(s.ph==="up"&&k<115&&aiStanceSplit(l))s.ph="down";
+    else if(s.ph==="down"&&k>155){s.ph="up";return "rep";}
+    H(s.ph==="down"?"일어나세요!":"한 발 앞으로, 무릎 90°까지");}},
+  "팔굽혀펴기":{mk:()=>({ph:"up"}),step(s,l,H){
+    if(!aiTorsoHoriz(l))return H("옆에서 몸이 수평으로 보이게 엎드리세요");
+    const e=aiElbow(l);if(e==null)return H("팔이 안 보여요");
+    if(s.ph==="up"&&e<95)s.ph="down";
+    else if(s.ph==="down"&&e>150){s.ph="up";return "rep";}
+    H(s.ph==="down"?"밀어 올리세요!":`팔꿈치 ${Math.round(e)}°`);}},
+  "버피":{mk:()=>({st:"stand"}),step(s,l,H){
+    const horiz=aiTorsoHoriz(l),k=aiKnee(l);
+    if(s.st==="stand"&&horiz){s.st="plank";H("엎드림 확인 — 일어나서 점프!");}
+    else if(s.st==="plank"&&!horiz&&k!=null&&k>150){s.st="stand";return "rep";}
+    else H(s.st==="plank"?"일어나서 점프!":"엎드렸다가 일어나며 점프");}},
+};
+AI_DET["점프 스쿼트"]=AI_DET["스쿼트"]; // 무릎각 사이클 동일 (점프 검증은 추후 업데이트)
+AI_DET["점프 런지"]=AI_DET["런지"];
+
+function aiSay(t){try{const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.08;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){}}
 function aiBeep(freq=880,dur=0.08){
   try{
     const ctx=ai.actx||(ai.actx=new (window.AudioContext||window.webkitAudioContext)());
@@ -1689,13 +1754,43 @@ function aiBeep(freq=880,dur=0.08){
     o.start();o.stop(ctx.currentTime+dur);
   }catch(e){}
 }
+
+/* ── 루틴 세팅 UI ── */
+function aiRenderRows(){
+  const rows=state.aiRoutine&&state.aiRoutine.length?state.aiRoutine:[{ex:"스쿼트",reps:10,sets:3}];
+  state.aiRoutine=rows;
+  document.getElementById("aiRoutineRows").innerHTML=rows.map((r,i)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-top:6px" data-i="${i}">
+      <select class="ai-ex" style="flex:2;padding:9px;border-radius:10px">${AI_EX_LIST.map(e=>`<option ${e===r.ex?"selected":""}>${e}</option>`).join("")}</select>
+      <input class="ai-reps" type="number" min="1" max="99" value="${r.reps}" style="width:56px;padding:9px;border-radius:10px;text-align:center"><span style="font-size:12px">회</span>
+      <input class="ai-sets" type="number" min="1" max="9" value="${r.sets}" style="width:44px;padding:9px;border-radius:10px;text-align:center"><span style="font-size:12px">세트</span>
+      <button class="ai-del" style="width:30px;background:none;border:none;color:var(--red);font-size:16px">✕</button>
+    </div>`).join("");
+  const wrap=document.getElementById("aiRoutineRows");
+  wrap.querySelectorAll("[data-i]").forEach(row=>{
+    const i=+row.dataset.i;
+    row.querySelector(".ai-ex").onchange=e=>{state.aiRoutine[i].ex=e.target.value;save();};
+    row.querySelector(".ai-reps").onchange=e=>{state.aiRoutine[i].reps=Math.max(1,+e.target.value||10);save();};
+    row.querySelector(".ai-sets").onchange=e=>{state.aiRoutine[i].sets=Math.max(1,+e.target.value||1);save();};
+    row.querySelector(".ai-del").onclick=()=>{state.aiRoutine.splice(i,1);save();aiRenderRows();};
+  });
+}
+
 async function aiOpen(){
   openOverlay(document.getElementById("aiSheet"));
-  const hint=document.getElementById("aiHint");
-  ai.reps=0;ai.phase="up";ai.minKnee=180;ai.sessionMin=180;
+  document.getElementById("aiSetup").style.display="";
+  document.getElementById("aiWork").style.display="none";
+  aiRenderRows();
+}
+async function aiBegin(routine){
+  ai.routine=routine;ai.ri=0;ai.setNo=1;ai.reps=0;ai.mode="work";ai.log={};
+  const cur=routine[0];ai.target=cur.reps;ai.exState=AI_DET[cur.ex].mk();
+  document.getElementById("aiSetup").style.display="none";
+  document.getElementById("aiWork").style.display="";
   document.getElementById("aiCount").textContent="0";
   document.getElementById("aiReps").textContent="0";
-  document.getElementById("aiDepth").textContent="-";
+  aiSay("운동을 시작합니다"); // iOS: 사용자 제스처 안에서 첫 발화 필요
+  const hint=document.getElementById("aiHint");
   try{
     hint.textContent="AI 모델 불러오는 중… (첫 실행은 몇 초 걸려요)";
     if(!ai.lm){
@@ -1713,58 +1808,82 @@ async function aiOpen(){
     ai.on=true;ai.startAt=Date.now();
     ai.timer=setInterval(()=>{const s=Math.floor((Date.now()-ai.startAt)/1000);
       document.getElementById("aiTime").textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");},1000);
-    hint.textContent="전신이 보이게 서주세요";
+    aiAnnounce();
     aiLoop();
   }catch(e){
     hint.textContent="시작 실패: "+(e.message||e)+" — 카메라 권한을 확인해주세요";
   }
 }
+function aiAnnounce(){
+  const cur=ai.routine[ai.ri];
+  document.getElementById("aiExLabel").textContent=`${cur.ex} · ${ai.setNo}/${cur.sets}세트 · 목표 ${ai.target===9999?"자유":ai.target+"회"}`;
+  document.getElementById("aiSetLbl").textContent=`${ai.setNo}/${cur.sets}`;
+  aiSay(`${cur.ex}, ${ai.target===9999?"자유롭게":ai.target+"회"} 시작`);
+}
+function aiRepDone(){
+  ai.reps++;aiBeep(880);
+  document.getElementById("aiCount").textContent=ai.reps;
+  document.getElementById("aiReps").textContent=ai.reps;
+  aiSay(String(ai.reps));
+  const cur=ai.routine[ai.ri];
+  ai.log[cur.ex]=(ai.log[cur.ex]||0)+1;
+  if(ai.target!==9999&&ai.reps>=ai.target)aiSetDone();
+}
+function aiSetDone(){
+  const cur=ai.routine[ai.ri];
+  const lastSet=ai.setNo>=cur.sets,lastEx=ai.ri>=ai.routine.length-1;
+  if(lastSet&&lastEx){aiSay("모든 운동 완료! 수고하셨습니다");document.getElementById("aiHint").textContent="🎉 루틴 완료 — 저장하고 종료를 누르세요";ai.mode="done";return;}
+  ai.mode="rest";ai.restT=15;
+  const nextLabel=lastSet?`다음은 ${ai.routine[ai.ri+1].ex}`:`${cur.ex} ${ai.setNo+1}세트`;
+  aiSay(`세트 완료. 15초 휴식. ${nextLabel} 준비하세요`);
+  document.getElementById("aiHint").textContent=`휴식 — ${nextLabel}`;
+  ai.restIv=setInterval(()=>{
+    ai.restT--;
+    document.getElementById("aiCount").textContent=ai.restT;
+    if(ai.restT<=3&&ai.restT>0)aiSay(String(ai.restT));
+    if(ai.restT<=0){
+      clearInterval(ai.restIv);
+      if(lastSet){ai.ri++;ai.setNo=1;}else ai.setNo++;
+      const nc=ai.routine[ai.ri];ai.target=nc.reps;ai.reps=0;ai.exState=AI_DET[nc.ex].mk();ai.mode="work";
+      document.getElementById("aiCount").textContent="0";
+      document.getElementById("aiReps").textContent="0";
+      aiAnnounce();
+    }
+  },1000);
+}
 function aiLoop(){
   if(!ai.on)return;
   const vid=document.getElementById("aiVideo"),cv=document.getElementById("aiCanvas");
-  if(vid.videoWidth){
+  if(vid.videoWidth&&ai.mode==="work"){
     if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
     const res=ai.lm.detectForVideo(vid,performance.now());
     const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
     const lms=res.landmarks&&res.landmarks[0];
     if(lms){
       new ai.draw(ctx).drawConnectors(lms,ai.conns,{color:"#4ade80",lineWidth:3});
-      // 무릎각: (엉덩이23/24-무릎25/26-발목27/28) 보이는 쪽 평균
-      const pairs=[[23,25,27],[24,26,28]].filter(p=>p.every(i=>(lms[i].visibility??1)>0.5));
-      if(pairs.length){
-        const knee=pairs.reduce((s,p)=>s+aiAngle(lms[p[0]],lms[p[1]],lms[p[2]]),0)/pairs.length;
-        ai.minKnee=Math.min(ai.minKnee,knee);ai.sessionMin=Math.min(ai.sessionMin,knee);
-        const hint=document.getElementById("aiHint");
-        if(ai.phase==="up"&&knee<105){ai.phase="down";aiBeep(440);}
-        else if(ai.phase==="down"&&knee>155){
-          ai.phase="up";ai.reps++;aiBeep(880);
-          document.getElementById("aiCount").textContent=ai.reps;
-          document.getElementById("aiReps").textContent=ai.reps;
-          document.getElementById("aiDepth").textContent=Math.round(ai.minKnee)+"°";
-          ai.minKnee=180;
-        }
-        if(ai.phase==="up"&&knee<150&&knee>=105)hint.textContent="조금 더 깊이 앉아보세요";
-        else if(ai.phase==="down")hint.textContent="좋아요! 일어나세요";
-        else hint.textContent=`무릎 ${Math.round(knee)}° · ${ai.reps}개`;
-      }else{
-        document.getElementById("aiHint").textContent="하체가 화면에 안 보여요 — 뒤로 물러나주세요";
-      }
+      const cur=ai.routine[ai.ri];
+      const H=t=>{document.getElementById("aiHint").textContent=t;};
+      if(AI_DET[cur.ex].step(ai.exState,lms,H)==="rep")aiRepDone();
+    }else{
+      document.getElementById("aiHint").textContent="사람이 안 보여요 — 화면 안에 서주세요";
     }
   }
   ai.raf=requestAnimationFrame(aiLoop);
 }
 function aiStop(){
-  ai.on=false;cancelAnimationFrame(ai.raf);clearInterval(ai.timer);
+  ai.on=false;cancelAnimationFrame(ai.raf);clearInterval(ai.timer);clearInterval(ai.restIv);
+  try{speechSynthesis.cancel();}catch(e){}
   if(ai.stream){ai.stream.getTracks().forEach(t=>t.stop());ai.stream=null;}
 }
 function aiSave(){
   const sec=Math.floor((Date.now()-ai.startAt)/1000),min=Math.max(1,Math.round(sec/60));
-  if(ai.reps>0){
+  const parts=Object.entries(ai.log).map(([ex,n])=>`${ex} ${n}회`);
+  if(parts.length){
     state.workouts.push({id:uid(),date:todayStr(),type:"근력운동",minutes:min,sets:null,
       kcalBurned:estBurn("근력운동",sec/60,bodyWeight(todayStr())),
-      memo:`AI 스쿼트 ${ai.reps}회`+(ai.sessionMin<180?` · 최저 무릎각 ${Math.round(ai.sessionMin)}°`:""),createdAt:Date.now()});
+      memo:"AI 루틴: "+parts.join(" · "),createdAt:Date.now()});
     save();selDate=todayStr();renderWorkout();renderDiet();
-    toast(`저장 완료 · 스쿼트 ${ai.reps}회 · ${min}분`);
+    toast(`저장 완료 · ${parts.join(", ")} · ${min}분`);
   }else{toast("카운트가 없어 저장하지 않았어요");}
   aiStop();closeOverlay("aiSheet");
 }
@@ -2004,6 +2123,9 @@ function init(){
   document.getElementById("aiSquatBtn").onclick=aiOpen;
   document.getElementById("aiSaveBtn").onclick=aiSave;
   document.getElementById("aiCloseBtn").onclick=aiClose;
+  document.getElementById("aiAddRow").onclick=()=>{state.aiRoutine.push({ex:"스쿼트",reps:10,sets:1});save();aiRenderRows();};
+  document.getElementById("aiStartRoutine").onclick=()=>{if(!(state.aiRoutine||[]).length){toast("동작을 추가해주세요");return;}aiBegin(state.aiRoutine.map(r=>({...r})));};
+  document.getElementById("aiFreeMode").onclick=()=>aiBegin([{ex:"스쿼트",reps:9999,sets:1}]);
   // 바깥탭/뒤로가기로 닫혀도 카메라 반드시 종료
   new MutationObserver(()=>{const s=document.getElementById("aiSheet");if(s&&!s.classList.contains("open")&&ai.on)aiStop();})
     .observe(document.getElementById("aiSheet"),{attributes:true,attributeFilter:["class"]});
