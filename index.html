@@ -3,7 +3,7 @@
 <head>
 <!--APPVER:2026.06.19b-->
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://accounts.google.com https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -278,7 +278,7 @@
     <button id="woNextM">›</button>
   </div>
   <div id="woCalendar"></div>
-  <div class="sec-head"><div class="sec-title">🏃 오늘 운동</div><button class="gps-start-btn" id="gpsOpenBtn">🛰 야외 운동(GPS)</button></div>
+  <div class="sec-head"><div class="sec-title">🏃 오늘 운동</div><div style="display:flex;gap:6px"><button class="gps-start-btn" id="aiSquatBtn">🤖 AI 스쿼트</button><button class="gps-start-btn" id="gpsOpenBtn">🛰 야외 운동(GPS)</button></div></div>
   <div id="workoutList"></div>
 </div>
 
@@ -457,6 +457,30 @@
 </div>
 
 <!-- 저장된 경로 보기 -->
+<!-- AI 스쿼트 카운터 (MediaPipe Pose) -->
+<div class="overlay" id="aiSheet">
+  <div class="sheet" style="max-height:96vh">
+    <div class="grab"></div>
+    <h3>🤖 AI 스쿼트 카운터</h3>
+    <div id="aiStage" style="position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden">
+      <video id="aiVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
+      <canvas id="aiCanvas" style="position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)"></canvas>
+      <div id="aiCount" style="position:absolute;top:8px;left:0;right:0;text-align:center;font-size:64px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">0</div>
+      <div id="aiHint" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">카메라 준비 중…</div>
+    </div>
+    <div class="gps-stats" style="margin-top:10px">
+      <div class="gps-stat"><div class="gv" id="aiReps">0</div><div class="gl">개수</div></div>
+      <div class="gps-stat"><div class="gv" id="aiTime">00:00</div><div class="gl">시간</div></div>
+      <div class="gps-stat"><div class="gv" id="aiDepth">-</div><div class="gl">최저 무릎각</div></div>
+    </div>
+    <div class="gps-actions" style="margin-top:10px">
+      <button id="aiSaveBtn" style="background:var(--green)">💾 저장하고 종료</button>
+      <button id="aiCloseBtn" style="background:var(--red)">✕ 닫기</button>
+    </div>
+    <div style="font-size:11px;color:var(--sub,#888);margin-top:8px;text-align:center">전신이 화면에 나오게 폰을 세워두세요 · 측정값은 참고용이며 의료 진단이 아닙니다</div>
+  </div>
+</div>
+
 <div class="overlay" id="routeSheet">
   <div class="sheet">
     <div class="grab"></div>
@@ -1647,6 +1671,104 @@ function gpsStop(){
   toast(`운동 저장 · ${km.toFixed(2)}km · ${min}분`);
 }
 function gpsAbort(){gpsCleanup();closeOverlay("gpsSheet");}
+
+/* ===================== AI 스쿼트 카운터 (MediaPipe Pose) ===================== */
+const ai={lm:null,stream:null,raf:0,on:false,reps:0,phase:"up",minKnee:180,startAt:0,timer:0,lastBeep:0};
+function aiAngle(a,b,c){ // b가 꼭짓점인 각도
+  const v1=[a.x-b.x,a.y-b.y],v2=[c.x-b.x,c.y-b.y];
+  const dot=v1[0]*v2[0]+v1[1]*v2[1];
+  const m=Math.hypot(...v1)*Math.hypot(...v2)||1e-6;
+  return Math.acos(Math.min(1,Math.max(-1,dot/m)))*180/Math.PI;
+}
+function aiBeep(freq=880,dur=0.08){
+  try{
+    const ctx=ai.actx||(ai.actx=new (window.AudioContext||window.webkitAudioContext)());
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.frequency.value=freq;o.connect(g);g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.15,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+dur);
+    o.start();o.stop(ctx.currentTime+dur);
+  }catch(e){}
+}
+async function aiOpen(){
+  openOverlay(document.getElementById("aiSheet"));
+  const hint=document.getElementById("aiHint");
+  ai.reps=0;ai.phase="up";ai.minKnee=180;ai.sessionMin=180;
+  document.getElementById("aiCount").textContent="0";
+  document.getElementById("aiReps").textContent="0";
+  document.getElementById("aiDepth").textContent="-";
+  try{
+    hint.textContent="AI 모델 불러오는 중… (첫 실행은 몇 초 걸려요)";
+    if(!ai.lm){
+      const v=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+      const fs=await v.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+      ai.lm=await v.PoseLandmarker.createFromOptions(fs,{
+        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"GPU"},
+        runningMode:"VIDEO",numPoses:1});
+      ai.draw=v.DrawingUtils;ai.conns=v.PoseLandmarker.POSE_CONNECTIONS;
+    }
+    hint.textContent="카메라 켜는 중…";
+    ai.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:720},height:{ideal:960}},audio:false});
+    const vid=document.getElementById("aiVideo");
+    vid.srcObject=ai.stream;await vid.play();
+    ai.on=true;ai.startAt=Date.now();
+    ai.timer=setInterval(()=>{const s=Math.floor((Date.now()-ai.startAt)/1000);
+      document.getElementById("aiTime").textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");},1000);
+    hint.textContent="전신이 보이게 서주세요";
+    aiLoop();
+  }catch(e){
+    hint.textContent="시작 실패: "+(e.message||e)+" — 카메라 권한을 확인해주세요";
+  }
+}
+function aiLoop(){
+  if(!ai.on)return;
+  const vid=document.getElementById("aiVideo"),cv=document.getElementById("aiCanvas");
+  if(vid.videoWidth){
+    if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
+    const res=ai.lm.detectForVideo(vid,performance.now());
+    const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
+    const lms=res.landmarks&&res.landmarks[0];
+    if(lms){
+      new ai.draw(ctx).drawConnectors(lms,ai.conns,{color:"#4ade80",lineWidth:3});
+      // 무릎각: (엉덩이23/24-무릎25/26-발목27/28) 보이는 쪽 평균
+      const pairs=[[23,25,27],[24,26,28]].filter(p=>p.every(i=>(lms[i].visibility??1)>0.5));
+      if(pairs.length){
+        const knee=pairs.reduce((s,p)=>s+aiAngle(lms[p[0]],lms[p[1]],lms[p[2]]),0)/pairs.length;
+        ai.minKnee=Math.min(ai.minKnee,knee);ai.sessionMin=Math.min(ai.sessionMin,knee);
+        const hint=document.getElementById("aiHint");
+        if(ai.phase==="up"&&knee<105){ai.phase="down";aiBeep(440);}
+        else if(ai.phase==="down"&&knee>155){
+          ai.phase="up";ai.reps++;aiBeep(880);
+          document.getElementById("aiCount").textContent=ai.reps;
+          document.getElementById("aiReps").textContent=ai.reps;
+          document.getElementById("aiDepth").textContent=Math.round(ai.minKnee)+"°";
+          ai.minKnee=180;
+        }
+        if(ai.phase==="up"&&knee<150&&knee>=105)hint.textContent="조금 더 깊이 앉아보세요";
+        else if(ai.phase==="down")hint.textContent="좋아요! 일어나세요";
+        else hint.textContent=`무릎 ${Math.round(knee)}° · ${ai.reps}개`;
+      }else{
+        document.getElementById("aiHint").textContent="하체가 화면에 안 보여요 — 뒤로 물러나주세요";
+      }
+    }
+  }
+  ai.raf=requestAnimationFrame(aiLoop);
+}
+function aiStop(){
+  ai.on=false;cancelAnimationFrame(ai.raf);clearInterval(ai.timer);
+  if(ai.stream){ai.stream.getTracks().forEach(t=>t.stop());ai.stream=null;}
+}
+function aiSave(){
+  const sec=Math.floor((Date.now()-ai.startAt)/1000),min=Math.max(1,Math.round(sec/60));
+  if(ai.reps>0){
+    state.workouts.push({id:uid(),date:todayStr(),type:"근력운동",minutes:min,sets:null,
+      kcalBurned:estBurn("근력운동",sec/60,bodyWeight(todayStr())),
+      memo:`AI 스쿼트 ${ai.reps}회`+(ai.sessionMin<180?` · 최저 무릎각 ${Math.round(ai.sessionMin)}°`:""),createdAt:Date.now()});
+    save();selDate=todayStr();renderWorkout();renderDiet();
+    toast(`저장 완료 · 스쿼트 ${ai.reps}회 · ${min}분`);
+  }else{toast("카운트가 없어 저장하지 않았어요");}
+  aiStop();closeOverlay("aiSheet");
+}
+function aiClose(){aiStop();closeOverlay("aiSheet");}
 function openRouteView(w){
   if(!w.route||!w.route.length){toast("저장된 경로가 없어요");return;}
   document.getElementById("routeTitle").textContent=`🗺 ${w.type} 경로`;
@@ -1879,6 +2001,12 @@ function init(){
   document.getElementById("healthDelete").onclick=deleteHealth;
   // GPS 야외 운동
   document.getElementById("gpsOpenBtn").onclick=openGpsSheet;
+  document.getElementById("aiSquatBtn").onclick=aiOpen;
+  document.getElementById("aiSaveBtn").onclick=aiSave;
+  document.getElementById("aiCloseBtn").onclick=aiClose;
+  // 바깥탭/뒤로가기로 닫혀도 카메라 반드시 종료
+  new MutationObserver(()=>{const s=document.getElementById("aiSheet");if(s&&!s.classList.contains("open")&&ai.on)aiStop();})
+    .observe(document.getElementById("aiSheet"),{attributes:true,attributeFilter:["class"]});
   document.getElementById("gpsStart").onclick=gpsStartPause;
   document.getElementById("gpsStop").onclick=gpsStop;
   // 체중·목표
