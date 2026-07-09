@@ -473,6 +473,10 @@
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
         세트 간 휴식 <input id="aiRestSec" type="number" min="5" max="180" value="15" style="width:56px;padding:8px;border-radius:10px;text-align:center">초
+        <span style="flex:1"></span>
+        <button class="ai-lvl" data-lvl="초급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">초급</button>
+        <button class="ai-lvl" data-lvl="중급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">중급</button>
+        <button class="ai-lvl" data-lvl="고급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">고급</button>
       </div>
       <div id="aiRoutineRows"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
@@ -1793,6 +1797,13 @@ function aiBeep(freq=880,dur=0.08){
   }catch(e){}
 }
 
+/* 레벨별 기본 루틴 (초급: 낮은 강도·긴 휴식 → 고급: 점프·버피 포함·짧은 휴식) */
+const AI_LEVELS={
+  "초급":{name:"초급 루틴",rest:30,items:[{ex:"스쿼트",reps:10,sets:2},{ex:"런지",reps:8,sets:2},{ex:"팔굽혀펴기",reps:5,sets:2}]},
+  "중급":{name:"중급 루틴",rest:20,items:[{ex:"스쿼트",reps:15,sets:3},{ex:"런지",reps:12,sets:3},{ex:"팔굽혀펴기",reps:10,sets:3}]},
+  "고급":{name:"고급 루틴",rest:15,items:[{ex:"점프 스쿼트",reps:15,sets:3},{ex:"점프 런지",reps:12,sets:3},{ex:"팔굽혀펴기",reps:15,sets:3},{ex:"버피",reps:10,sets:3}]},
+};
+
 /* ── 루틴 세팅 UI (다중 프리셋) ── */
 function aiCurRoutine(){return state.aiRoutines[state.aiRoutineSel];}
 function aiRenderRows(){
@@ -2183,6 +2194,12 @@ function init(){
     if(state.aiRoutines.length<=1){toast("마지막 루틴은 삭제할 수 없어요");return;}
     if(!confirm(`'${aiCurRoutine().name}' 루틴을 삭제할까요?`))return;
     state.aiRoutines.splice(state.aiRoutineSel,1);state.aiRoutineSel=0;save();aiRenderRows();};
+  document.querySelectorAll(".ai-lvl").forEach(b=>b.onclick=()=>{
+    const tpl=AI_LEVELS[b.dataset.lvl];
+    const ex=state.aiRoutines.findIndex(r=>r.name===tpl.name);
+    if(ex>=0){state.aiRoutineSel=ex;toast(`${tpl.name} 선택`);}
+    else{state.aiRoutines.push(JSON.parse(JSON.stringify(tpl)));state.aiRoutineSel=state.aiRoutines.length-1;toast(`${tpl.name} 추가 — 수정해서 쓰셔도 돼요`);}
+    save();aiRenderRows();});
   // 바깥탭/뒤로가기로 닫혀도 카메라 반드시 종료
   new MutationObserver(()=>{const s=document.getElementById("aiSheet");if(s&&!s.classList.contains("open")&&ai.on)aiStop();})
     .observe(document.getElementById("aiSheet"),{attributes:true,attributeFilter:["class"]});
