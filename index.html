@@ -1801,18 +1801,21 @@ function aiStanceSplit(l){ // 런지: 발이 앞뒤로 벌어짐 (측면 기준 
 /* 동작별 카운터: mk()=상태 생성, step(state, landmarks, hintFn) → "rep" | undefined */
 const AI_DET={
   "스쿼트":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
-    if(s.ph==="up"&&k<120)s.ph="down";           // 7/9 완화: 105→120 (측면 투영각 보정)
-    else if(s.ph==="down"&&k>150){s.ph="up";return "rep";}  // 155→150
+    if(s.ph==="up"&&k<120){s.ph="down";s.dAt=Date.now();s.minA=k;}
+    else if(s.ph==="down"){s.minA=Math.min(s.minA,k);
+      if(k>150){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}  // 250ms 미만 = 경계 떨림, 무효
     H(s.ph==="down"?"일어나세요!":(k<145?"조금 더 깊이!":`무릎 ${Math.round(k)}°`));}},
   "런지":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요");
-    if(s.ph==="up"&&k<125)s.ph="down";            // 스탠스 조건 제거+완화 (7/9: 측면각에서 스탠스 오탐)
-    else if(s.ph==="down"&&k>150){s.ph="up";return "rep";}
+    if(s.ph==="up"&&k<125){s.ph="down";s.dAt=Date.now();s.minA=k;}
+    else if(s.ph==="down"){s.minA=Math.min(s.minA,k);
+      if(k>150){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}
     H(s.ph==="down"?"일어나세요!":"한 발 앞으로, 무릎 90°까지");}},
   "팔굽혀펴기":{mk:()=>({ph:"up"}),step(s,l,H){
     if(!aiTorsoHoriz(l))return H("옆에서 몸이 수평으로 보이게 엎드리세요");
     const e=aiSmooth("elbow",aiElbow(l));if(e==null)return H("팔이 안 보여요");
-    if(s.ph==="up"&&e<100)s.ph="down";
-    else if(s.ph==="down"&&e>140){s.ph="up";return "rep";}
+    if(s.ph==="up"&&e<100){s.ph="down";s.dAt=Date.now();s.minA=e;}
+    else if(s.ph==="down"){s.minA=Math.min(s.minA,e);
+      if(e>140){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}
     H(s.ph==="down"?"밀어 올리세요!":`팔꿈치 ${Math.round(e)}°`);}},
   "버피":{mk:()=>({st:"stand"}),step(s,l,H){
     const horiz=aiTorsoHoriz(l),k=aiKnee(l);
@@ -1825,8 +1828,9 @@ AI_DET["점프 런지"]=AI_DET["런지"];
 /* 커스텀 운동: 카운팅 방식만 고르면 기본 엔진에 연결 */
 const AI_KIND_MAP={"하체":"스쿼트","상체":null,"엎드림":"팔굽혀펴기"};
 AI_DET["_상체"]={mk:()=>({ph:"up"}),step(s,l,H){const e=aiSmooth("elbow",aiElbow(l));if(e==null)return H("팔이 안 보여요");
-  if(s.ph==="up"&&e<100)s.ph="down";  // 스무딩 지연 감안 100/140 (푸시업과 동일 히스테리시스)
-  else if(s.ph==="down"&&e>140){s.ph="up";return "rep";}
+  if(s.ph==="up"&&e<100){s.ph="down";s.dAt=Date.now();s.minA=e;}
+  else if(s.ph==="down"){s.minA=Math.min(s.minA,e);
+    if(e>140){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}
   H(s.ph==="down"?"펴세요!":`팔꿈치 ${Math.round(e)}°`);}};
 function aiExList(){return AI_EX_LIST.concat((state.customEx||[]).map(c=>c.name));}
 function aiDet(ex){
@@ -1878,6 +1882,16 @@ function aiRenderRows(){
     row.querySelector(".ai-reps").onchange=e=>{its[i].reps=Math.max(1,+e.target.value||10);save();};
     row.querySelector(".ai-del").onclick=()=>{its.splice(i,1);save();aiRenderRows();};
   });
+  // 지난 세션 기록 (튜닝 참고용): 동작별 카운트·평균 최저각
+  const ls=state._aiLastSession||[];
+  let lsHtml="";
+  if(ls.length){
+    const agg={};ls.forEach(r=>{(agg[r.ex]=agg[r.ex]||[]).push(r.min);});
+    lsHtml=`<div style="font-size:11px;color:var(--sub,#888);margin-top:10px">지난 세션: `+
+      Object.entries(agg).map(([ex,ms])=>`${ex} ${ms.length}회(평균 최저각 ${Math.round(ms.reduce((a,b)=>a+b,0)/ms.length)}°)`).join(" · ")+`</div>`;
+  }
+  const old_el=document.getElementById("aiLastSession");if(old_el)old_el.remove();
+  if(lsHtml)document.getElementById("aiRoutineRows").insertAdjacentHTML("afterend",`<div id="aiLastSession">${lsHtml}</div>`);
 }
 
 async function aiOpen(){
@@ -1927,6 +1941,8 @@ function aiRepDone(){
   if(Date.now()-ai.lastRep<400)return; // 프레임 지터 중복 카운트 방지
   ai.lastRep=Date.now();
   ai.reps++;aiBeep(880);
+  // 튜닝용 세션 기록: 회당 최저각 (세팅 화면 '지난 세션'에 표시)
+  try{ai.repLog=ai.repLog||[];ai.repLog.push({ex:ai.items[ai.ii].ex,min:Math.round(ai.exState.lastMin||0),t:Date.now()});}catch(e){}
   document.getElementById("aiCount").textContent=ai.reps;
   document.getElementById("aiReps").textContent=ai.reps;
   aiSay(String(ai.reps));
@@ -2001,9 +2017,12 @@ function aiSave(){
     save();selDate=todayStr();renderWorkout();renderDiet();
     toast(`저장 완료 · ${parts.join(", ")} · ${min}분`);
   }else{toast("카운트가 없어 저장하지 않았어요");}
+  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];save();}
   aiStop();closeOverlay("aiSheet");
 }
-function aiClose(){aiStop();closeOverlay("aiSheet");}
+function aiClose(){
+  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];save();}
+  aiStop();closeOverlay("aiSheet");}
 
 /* ===================== 체형 밸런스 체크 (2단계) ===================== */
 const bc={on:false,raf:0,stream:null,phase:"front",frames:[],collecting:false,res:{}};
