@@ -464,7 +464,16 @@
     <h3>🤖 AI 운동 코치</h3>
     <!-- 루틴 세팅 (시작 전) -->
     <div id="aiSetup">
-      <div style="font-size:13px;color:var(--sub,#888);margin:4px 0 8px">오늘 운동을 미리 세팅하세요. 동작·횟수·세트 순서대로 음성 코칭과 함께 자동 카운팅됩니다.</div>
+      <div style="font-size:13px;color:var(--sub,#888);margin:4px 0 8px">루틴을 골라 시작하세요. 동작·횟수·세트 순서대로 음성 코칭과 함께 자동 카운팅됩니다.</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="aiRoutineSel" style="flex:1;padding:10px;border-radius:10px;font-weight:600"></select>
+        <button id="aiNewRoutine" title="새 루틴" style="width:38px;height:38px;border-radius:10px;background:var(--card,#333);border:none;font-size:16px">＋</button>
+        <button id="aiRenRoutine" title="이름 변경" style="width:38px;height:38px;border-radius:10px;background:var(--card,#333);border:none;font-size:14px">✏️</button>
+        <button id="aiDelRoutine" title="루틴 삭제" style="width:38px;height:38px;border-radius:10px;background:var(--card,#333);border:none;font-size:14px">🗑</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
+        세트 간 휴식 <input id="aiRestSec" type="number" min="5" max="180" value="15" style="width:56px;padding:8px;border-radius:10px;text-align:center">초
+      </div>
       <div id="aiRoutineRows"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button id="aiAddRow" style="flex:1;background:var(--card,#333);border:1px dashed var(--sub,#666);border-radius:10px;padding:10px;color:inherit">＋ 동작 추가</button>
@@ -672,8 +681,15 @@ function idbAll(){return idbOpen().then(db=>new Promise((res)=>{const out={};con
 function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 
 /* ===================== 저장 ===================== */
-function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];state.aiRoutine=state.aiRoutine||[{ex:"스쿼트",reps:10,sets:3}];}
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d){state=d;normalizeState();}}catch(e){}}
+function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];
+  // AI 루틴 다중 프리셋 (구 aiRoutine 단일 → aiRoutines 마이그레이션)
+  if(!state.aiRoutines||!state.aiRoutines.length){
+    const legacy=state.aiRoutine&&state.aiRoutine.length?state.aiRoutine:[{ex:"스쿼트",reps:10,sets:3}];
+    state.aiRoutines=[{name:"기본 루틴",rest:15,items:legacy}];
+  }
+  state.aiRoutines.forEach(r=>{r.rest=r.rest||15;r.items=r.items&&r.items.length?r.items:[{ex:"스쿼트",reps:10,sets:3}];});
+  if(typeof state.aiRoutineSel!=="number"||state.aiRoutineSel>=state.aiRoutines.length)state.aiRoutineSel=0;}
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d)state=d;}catch(e){}normalizeState();}
 function save(){state._savedAt=Date.now();localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
 
 /* ===================== overlay open/close + 모바일 뒤로가기 ===================== */
@@ -1777,10 +1793,15 @@ function aiBeep(freq=880,dur=0.08){
   }catch(e){}
 }
 
-/* ── 루틴 세팅 UI ── */
+/* ── 루틴 세팅 UI (다중 프리셋) ── */
+function aiCurRoutine(){return state.aiRoutines[state.aiRoutineSel];}
 function aiRenderRows(){
-  const rows=state.aiRoutine&&state.aiRoutine.length?state.aiRoutine:[{ex:"스쿼트",reps:10,sets:3}];
-  state.aiRoutine=rows;
+  // 프리셋 선택자
+  document.getElementById("aiRoutineSel").innerHTML=state.aiRoutines.map((r,i)=>
+    `<option value="${i}" ${i===state.aiRoutineSel?"selected":""}>${esc(r.name)}</option>`).join("");
+  const cur=aiCurRoutine();
+  document.getElementById("aiRestSec").value=cur.rest;
+  const rows=cur.items;
   document.getElementById("aiRoutineRows").innerHTML=rows.map((r,i)=>`
     <div style="display:flex;gap:6px;align-items:center;margin-top:6px" data-i="${i}">
       <select class="ai-ex" style="flex:2;padding:9px;border-radius:10px">${AI_EX_LIST.map(e=>`<option ${e===r.ex?"selected":""}>${e}</option>`).join("")}</select>
@@ -1790,11 +1811,11 @@ function aiRenderRows(){
     </div>`).join("");
   const wrap=document.getElementById("aiRoutineRows");
   wrap.querySelectorAll("[data-i]").forEach(row=>{
-    const i=+row.dataset.i;
-    row.querySelector(".ai-ex").onchange=e=>{state.aiRoutine[i].ex=e.target.value;save();};
-    row.querySelector(".ai-reps").onchange=e=>{state.aiRoutine[i].reps=Math.max(1,+e.target.value||10);save();};
-    row.querySelector(".ai-sets").onchange=e=>{state.aiRoutine[i].sets=Math.max(1,+e.target.value||1);save();};
-    row.querySelector(".ai-del").onclick=()=>{state.aiRoutine.splice(i,1);save();aiRenderRows();};
+    const i=+row.dataset.i,its=aiCurRoutine().items;
+    row.querySelector(".ai-ex").onchange=e=>{its[i].ex=e.target.value;save();};
+    row.querySelector(".ai-reps").onchange=e=>{its[i].reps=Math.max(1,+e.target.value||10);save();};
+    row.querySelector(".ai-sets").onchange=e=>{its[i].sets=Math.max(1,+e.target.value||1);save();};
+    row.querySelector(".ai-del").onclick=()=>{its.splice(i,1);save();aiRenderRows();};
   });
 }
 
@@ -1855,9 +1876,9 @@ function aiSetDone(){
   const cur=ai.routine[ai.ri];
   const lastSet=ai.setNo>=cur.sets,lastEx=ai.ri>=ai.routine.length-1;
   if(lastSet&&lastEx){aiSay("모든 운동 완료! 수고하셨습니다");document.getElementById("aiHint").textContent="🎉 루틴 완료 — 저장하고 종료를 누르세요";ai.mode="done";return;}
-  ai.mode="rest";ai.restT=15;
+  ai.mode="rest";ai.restT=ai.restLen||15;
   const nextLabel=lastSet?`다음은 ${ai.routine[ai.ri+1].ex}`:`${cur.ex} ${ai.setNo+1}세트`;
-  aiSay(`세트 완료. 15초 휴식. ${nextLabel} 준비하세요`);
+  aiSay(`세트 완료. ${ai.restT}초 휴식. ${nextLabel} 준비하세요`);
   document.getElementById("aiHint").textContent=`휴식 — ${nextLabel}`;
   ai.restIv=setInterval(()=>{
     ai.restT--;
@@ -2145,10 +2166,23 @@ function init(){
   document.getElementById("aiSquatBtn").onclick=aiOpen;
   document.getElementById("aiSaveBtn").onclick=aiSave;
   document.getElementById("aiCloseBtn").onclick=aiClose;
-  document.getElementById("aiAddRow").onclick=()=>{state.aiRoutine.push({ex:"스쿼트",reps:10,sets:1});save();aiRenderRows();};
-  document.getElementById("aiStartRoutine").onclick=()=>{if(!(state.aiRoutine||[]).length){toast("동작을 추가해주세요");return;}aiBegin(state.aiRoutine.map(r=>({...r})));};
-  document.getElementById("aiFreeMode").onclick=()=>aiBegin([{ex:"스쿼트",reps:9999,sets:1}]);
+  document.getElementById("aiAddRow").onclick=()=>{aiCurRoutine().items.push({ex:"스쿼트",reps:10,sets:1});save();aiRenderRows();};
+  document.getElementById("aiStartRoutine").onclick=()=>{const c=aiCurRoutine();if(!c.items.length){toast("동작을 추가해주세요");return;}ai.restLen=c.rest||15;aiBegin(c.items.map(r=>({...r})));};
+  document.getElementById("aiFreeMode").onclick=()=>{ai.restLen=15;aiBegin([{ex:"스쿼트",reps:9999,sets:1}]);};
   document.getElementById("aiFlipBtn").onclick=aiFlipCam;
+  document.getElementById("aiRoutineSel").onchange=e=>{state.aiRoutineSel=+e.target.value;save();aiRenderRows();};
+  document.getElementById("aiRestSec").onchange=e=>{aiCurRoutine().rest=Math.min(180,Math.max(5,+e.target.value||15));save();aiRenderRows();};
+  document.getElementById("aiNewRoutine").onclick=()=>{
+    const name=prompt("새 루틴 이름","루틴 "+(state.aiRoutines.length+1));if(!name)return;
+    state.aiRoutines.push({name:name.slice(0,20),rest:15,items:[{ex:"스쿼트",reps:10,sets:3}]});
+    state.aiRoutineSel=state.aiRoutines.length-1;save();aiRenderRows();};
+  document.getElementById("aiRenRoutine").onclick=()=>{
+    const name=prompt("루틴 이름 변경",aiCurRoutine().name);if(!name)return;
+    aiCurRoutine().name=name.slice(0,20);save();aiRenderRows();};
+  document.getElementById("aiDelRoutine").onclick=()=>{
+    if(state.aiRoutines.length<=1){toast("마지막 루틴은 삭제할 수 없어요");return;}
+    if(!confirm(`'${aiCurRoutine().name}' 루틴을 삭제할까요?`))return;
+    state.aiRoutines.splice(state.aiRoutineSel,1);state.aiRoutineSel=0;save();aiRenderRows();};
   // 바깥탭/뒤로가기로 닫혀도 카메라 반드시 종료
   new MutationObserver(()=>{const s=document.getElementById("aiSheet");if(s&&!s.classList.contains("open")&&ai.on)aiStop();})
     .observe(document.getElementById("aiSheet"),{attributes:true,attributeFilter:["class"]});
