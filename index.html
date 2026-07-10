@@ -1749,7 +1749,7 @@ function gpsStop(){
 function gpsAbort(){gpsCleanup();closeOverlay("gpsSheet");}
 
 /* ===================== AI 운동 코치 v2 — 루틴 모드 + 음성 (MediaPipe Pose) ===================== */
-const AI_EX_LIST=["스쿼트","점프 스쿼트","런지","점프 런지","팔굽혀펴기","버피"];
+const AI_EX_LIST=["스쿼트","점프 스쿼트","런지","점프 런지","팔굽혀펴기","버피","무릎 터치","마운틴 클라이머"];
 const ai={lm:null,stream:null,raf:0,on:false,reps:0,startAt:0,timer:0,
   routine:[],ri:0,setNo:1,target:0,mode:"work",log:{},restT:0,restIv:0,exState:null,
   facing:"user",sm:{},lastRep:0};
@@ -1823,7 +1823,8 @@ const AI_SEG={
   "전신":[[11,12],[23,24],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28],[11,13],[13,15],[12,14],[14,16]],
 };
 function aiSegOf(ex){
-  if(["스쿼트","점프 스쿼트","런지","점프 런지"].includes(ex))return AI_SEG["하체"];
+  if(["스쿼트","점프 스쿼트","런지","점프 런지","무릎 터치"].includes(ex))return AI_SEG["하체"];
+  if(ex==="마운틴 클라이머")return AI_SEG["전신"];
   const c=(state.customEx||[]).find(x=>x.name===ex);
   if(c)return c.kind==="상체"?AI_SEG["상체"]:c.kind==="하체"?AI_SEG["하체"]:AI_SEG["전신"];
   return AI_SEG["전신"];
@@ -1892,8 +1893,41 @@ const AI_DET={
 };
 AI_DET["점프 스쿼트"]=AI_DET["스쿼트"]; // 무릎각 사이클 동일 (점프 검증은 추후 업데이트)
 AI_DET["점프 런지"]=AI_DET["런지"];
+/* 양쪽 교대형: 왼쪽+오른쪽 각 1번씩 완성돼야 1회 (사장님 지정 규칙, 7/10) */
+function aiAltDet(opts){
+  return {mk:()=>({L:"down",R:"down",gotL:false,gotR:false}),
+    step(s,l,H){
+      if(opts.gate){const g=opts.gate(l);if(!g.ok)return H(g.hint);}
+      for(const side of ["L","R"]){
+        const up=opts.up(l,side);
+        if(up==null)continue;
+        if(s[side]==="down"&&up){s[side]="up";if(side==="L")s.gotL=true;else s.gotR=true;}
+        else if(s[side]==="up"&&!up)s[side]="down"; // 내려와야 같은 쪽 재인정 (한쪽 연타 방지)
+      }
+      if(s.gotL&&s.gotR){s.gotL=false;s.gotR=false;return "rep";}
+      H(s.gotL?"좋아요, 이제 오른쪽!":(s.gotR?"좋아요, 이제 왼쪽!":opts.hint||"교대로!"));
+    }};
+}
+AI_DET["무릎 터치"]=aiAltDet({
+  hint:"무릎을 허리 높이까지 교대로 올리세요",
+  up(l,side){
+    const k=side==="L"?25:26,h=side==="L"?23:24;
+    if(!aiVis(l,k)||!aiVis(l,h))return null;
+    return l[k].y<l[h].y+0.03; // 무릎이 골반 높이 근처까지 올라옴
+  }});
+AI_DET["마운틴 클라이머"]=aiAltDet({
+  gate(l){return aiTorsoHoriz(l)?{ok:true}:{ok:false,hint:"플랭크 자세로 (폰은 옆에서)"};},
+  hint:"무릎을 가슴 쪽으로 교대로!",
+  up(l,side){
+    const k=side==="L"?25:26;
+    const sh=aiVis(l,11)?l[11]:(aiVis(l,12)?l[12]:null);
+    const hp=aiVis(l,23)?l[23]:(aiVis(l,24)?l[24]:null);
+    if(!aiVis(l,k)||!sh||!hp)return null;
+    const span=Math.abs(hp.x-sh.x)||1e-6;
+    return Math.abs(l[k].x-sh.x)<span*0.6; // 무릎이 어깨 쪽으로 전진
+  }});
 /* 커스텀 운동: 카운팅 방식만 고르면 기본 엔진에 연결 */
-const AI_KIND_MAP={"하체":"스쿼트","상체":null,"엎드림":"팔굽혀펴기"};
+const AI_KIND_MAP={"하체":"스쿼트","상체":null,"엎드림":"팔굽혀펴기","양쪽":"무릎 터치"};
 AI_DET["_상체"]={mk:()=>({ph:"up"}),step(s,l,H){const e=aiSmooth("elbow",aiElbow(l));if(e==null)return H("팔이 안 보여요");
   if(s.ph==="up"&&e<100){s.ph="down";s.dAt=Date.now();s.minA=e;}
   else if(s.ph==="down"){s.minA=Math.min(s.minA,e);
@@ -2730,9 +2764,9 @@ function init(){
   document.getElementById("aiNewEx").onclick=()=>{
     const name=(prompt("내 운동 이름 (예: 덤벨 컬)")||"").trim();if(!name)return;
     if(aiExList().includes(name)){toast("이미 있는 이름이에요");return;}
-    const k=prompt("카운팅 방식을 숫자로 선택\n1 = 하체형 (앉았다 일어나는 동작)\n2 = 상체형 (팔을 굽혔다 펴는 동작)\n3 = 엎드림형 (푸시업처럼 엎드려서)","1");
-    const kind={"1":"하체","2":"상체","3":"엎드림"}[String(k).trim()];
-    if(!kind){toast("1~3 중에 선택해주세요");return;}
+    const k=prompt("카운팅 방식을 숫자로 선택\n1 = 하체형 (앉았다 일어나는 동작)\n2 = 상체형 (팔을 굽혔다 펴는 동작)\n3 = 엎드림형 (푸시업처럼 엎드려서)\n4 = 양쪽 교대형 (왼+오 = 1회, 무릎들기식)","1");
+    const kind={"1":"하체","2":"상체","3":"엎드림","4":"양쪽"}[String(k).trim()];
+    if(!kind){toast("1~4 중에 선택해주세요");return;}
     state.customEx.push({name:name.slice(0,15),kind});
     aiCurRoutine().items.push({ex:name.slice(0,15),reps:10});
     save();aiRenderRows();toast(`'${name}' 추가 (${kind}형 카운팅)`);};
