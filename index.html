@@ -2212,8 +2212,11 @@ function bcFinish(){
       <div>${v!=null?v+unit:"측정 안 됨"}</div>
       <div style="padding:3px 10px;border-radius:99px;background:${c};color:#fff;font-size:12px;font-weight:700">${g}</div></div>`;
   }).join("");
+  const issues=rows.filter(([n,v,u,w,b,key])=>v!=null&&v>=w).map(r=>r[5]);
+  bc.lastIssues=issues;
   const recHtml=recs.size?`<div style="margin-top:14px;font-weight:700">💪 추천 밸런스 운동</div>`+
-    [...recs].map(r=>`<div style="padding:8px 10px;background:var(--card,#f5f5f5);border-radius:10px;margin-top:6px;font-size:14px">· ${r}</div>`).join("")
+    [...recs].map(r=>`<div style="padding:8px 10px;background:var(--card,#f5f5f5);border-radius:10px;margin-top:6px;font-size:14px">· ${r}</div>`).join("")+
+    `<div class="gps-actions" style="margin-top:10px"><button id="bfStartBtn" style="background:var(--green)">🏋️ 지금 따라하기 (음성 코칭)</button></div>`
     :`<div style="margin-top:14px;color:#22c55e;font-weight:700">🎉 전반적으로 균형이 좋아요! 지금 상태를 유지하세요</div>`;
   document.getElementById("bcCam").style.display="none";
   document.getElementById("bcReport").style.display="";
@@ -2221,6 +2224,7 @@ function bcFinish(){
     `<div style="font-weight:700;margin-top:4px">측정 결과 (${todayStr()})</div>`+html+recHtml;
   state.bodyChecks.push({date:todayStr(),front:f,side:s,at:Date.now()});
   save();
+  const fb=document.getElementById("bfStartBtn");if(fb)fb.onclick=()=>bfStart(bc.lastIssues);
   aiSay("측정이 끝났습니다. 결과를 확인하세요");
 }
 function bcLoop(){
@@ -2244,6 +2248,132 @@ function bcStopCam(){
   if(bc.stream){bc.stream.getTracks().forEach(t=>t.stop());bc.stream=null;}
 }
 function bcClose(){bcStopCam();closeOverlay("bodySheet");}
+
+/* ===================== 교정운동 따라하기 (3단계) — 자세 도달 감지 + 유지 코칭 ===================== */
+const bf={on:false,raf:0,qi:0,rep:1,acc:0,lastT:0,queue:[],state:"go"};
+/* hold형: check(l)이 true인 동안만 유지시간 누적 / timer형: 음성 안내 + 단순 카운트다운 */
+const BF_EX={
+  chinTuck:{name:"턱 당기기",kind:"hold",hold:5,reps:5,
+    tip:"옆으로 서서, 턱을 뒤로 당겨 귀가 어깨 위에 오게 하세요",
+    check(l){const ear=aiVis(l,7)?l[7]:(aiVis(l,8)?l[8]:null),sh=aiVis(l,11)?l[11]:(aiVis(l,12)?l[12]:null);
+      if(!ear||!sh)return {ok:false,hint:"옆모습이 보이게 서주세요"};
+      const a=Math.abs(Math.atan2(ear.x-sh.x,sh.y-ear.y)*180/Math.PI);
+      return a<10?{ok:true}:{ok:false,hint:`턱을 더 당기세요 (${Math.round(a)}°)`};}},
+  wallAngel:{name:"벽 천사 (W자 홀드)",kind:"hold",hold:10,reps:3,
+    tip:"벽에 등을 대고, 팔을 W자로 들어 손목을 어깨 위로",
+    check(l){if(![11,12,13,14,15,16].every(i=>aiVis(l,i)))return {ok:false,hint:"상체가 다 보이게 서주세요"};
+      const up=l[15].y<l[11].y&&l[16].y<l[12].y;
+      const out=l[13].x<l[11].x&&l[14].x>l[12].x||l[13].x>l[11].x&&l[14].x<l[12].x;
+      return up?{ok:true}:{ok:false,hint:"손목을 어깨보다 위로 올리세요"};}},
+  hipBridge:{name:"힙 브릿지",kind:"hold",hold:15,reps:3,
+    tip:"바닥에 누워 무릎을 세우고, 엉덩이를 천장으로 들어올리세요 (폰은 옆에서)",
+    check(l){const hip=aiMidY(l,23,24),sh=aiMidY(l,11,12);
+      if(hip==null||sh==null)return {ok:false,hint:"옆에서 몸이 보이게 해주세요"};
+      return hip<sh-0.02?{ok:true}:{ok:false,hint:"엉덩이를 더 들어올리세요"};}},
+  sidePlank:{name:"사이드 플랭크",kind:"hold",hold:15,reps:2,
+    tip:"옆으로 누워 팔꿈치로 지지하고 몸을 일직선으로 (폰은 정면에서)",
+    check(l){const sh=aiVis(l,11)?l[11]:(aiVis(l,12)?l[12]:null),hp=aiVis(l,23)?l[23]:(aiVis(l,24)?l[24]:null),an=aiVis(l,27)?l[27]:(aiVis(l,28)?l[28]:null);
+      if(!sh||!hp||!an)return {ok:false,hint:"전신이 보이게 해주세요"};
+      const dx=an.x-sh.x,dy=an.y-sh.y,len=Math.hypot(dx,dy)||1e-6;
+      const dev=Math.abs((hp.x-sh.x)*dy-(hp.y-sh.y)*dx)/len; // 엉덩이의 어깨-발목 직선 이탈
+      return dev<0.05?{ok:true}:{ok:false,hint:"엉덩이가 처지지 않게 일직선!"};}},
+  yRaise:{name:"Y 레이즈 홀드",kind:"hold",hold:10,reps:3,
+    tip:"양팔을 Y자로 머리 위까지 활짝 들어올리세요",
+    check(l){if(![0,15,16].every(i=>aiVis(l,i)))return {ok:false,hint:"상체가 보이게 서주세요"};
+      return l[15].y<l[0].y&&l[16].y<l[0].y?{ok:true}:{ok:false,hint:"손을 머리보다 높이!"};}},
+  neckStretch:{name:"목 측면 스트레칭",kind:"timer",hold:30,reps:2,
+    tip:"손으로 머리를 옆으로 지그시 당기세요 (반대쪽도)"},
+  chestStretch:{name:"가슴 스트레칭",kind:"timer",hold:30,reps:1,
+    tip:"문틀에 팔을 대고 가슴을 앞으로 열어주세요"},
+};
+const BF_MAP={forwardHead:["chinTuck"],shoulder:["wallAngel"],pelvis:["hipBridge"],
+  center:["sidePlank"],roundShoulder:["yRaise","chestStretch"],head:["neckStretch"]};
+
+function bfStart(issues){
+  const keys=[...new Set((issues||[]).flatMap(k=>BF_MAP[k]||[]))];
+  if(!keys.length){toast("추천 운동이 없어요");return;}
+  bf.queue=keys.map(k=>BF_EX[k]);
+  bf.qi=0;bf.rep=1;bf.acc=0;bf.state="go";
+  document.getElementById("bcReport").style.display="none";
+  document.getElementById("bcCam").style.display="";
+  bc.on=true;bc.lmPrev=null;
+  if(!bc.stream){bcRecam();}else{bfAnnounce();bfLoop();}
+}
+async function bfRecam(){
+  try{
+    bc.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:720},height:{ideal:960}},audio:false});
+    const vid=document.getElementById("bcVideo");
+    vid.srcObject=bc.stream;await vid.play();
+    bfAnnounce();bfLoop();
+  }catch(e){document.getElementById("bcMsg").textContent="카메라 실패: "+(e.message||e);}
+}
+function bfAnnounce(){
+  const ex=bf.queue[bf.qi];
+  document.getElementById("bcPhaseLbl").textContent=`${bf.qi+1}/${bf.queue.length} · ${ex.name} · ${bf.rep}/${ex.reps}회`;
+  document.getElementById("bcBig").textContent=ex.hold;
+  document.getElementById("bcMsg").textContent=ex.tip;
+  aiSay(`${ex.name}. ${ex.tip}`);
+  bf.acc=0;bf.lastT=0;bf.saidSec=-1;
+}
+function bfLoop(){
+  if(!bc.on)return;
+  const vid=document.getElementById("bcVideo"),cv=document.getElementById("bcCanvas");
+  const now=performance.now();
+  const dt=bf.lastT?Math.min(100,now-bf.lastT):0;bf.lastT=now;
+  const ex=bf.queue[bf.qi];
+  let ok=ex.kind==="timer"; // 타이머형은 무조건 진행
+  if(vid.videoWidth){
+    if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
+    const res=ai.lm.detectForVideo(vid,now);
+    const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
+    const raw=res.landmarks&&res.landmarks[0];
+    if(raw){
+      const lms=aiSmoothLms(bc,raw);
+      aiDrawSkel(ctx,lms,AI_SEG["전신"],cv.width,cv.height);
+      if(ex.kind==="hold"){
+        const c=ex.check(lms);
+        ok=c.ok;
+        if(!c.ok&&c.hint)document.getElementById("bcMsg").textContent=c.hint;
+        else if(c.ok)document.getElementById("bcMsg").textContent="좋아요, 유지하세요!";
+      }
+    }else if(ex.kind==="hold"){ok=false;bc.lmPrev=null;}
+  }
+  if(ok)bf.acc+=dt;
+  const remain=Math.max(0,Math.ceil(ex.hold-bf.acc/1000));
+  document.getElementById("bcBig").textContent=remain;
+  if(remain<=3&&remain>0&&bf.saidSec!==remain&&ok){bf.saidSec=remain;aiSay(String(remain));}
+  if(bf.acc>=ex.hold*1000){
+    aiBeep(990,0.15);
+    if(bf.rep<ex.reps){
+      bf.rep++;aiSay(`좋아요! ${bf.rep}회째, 잠깐 쉬었다 다시`);
+      bf.acc=0;bf.saidSec=-1;
+      setTimeout(()=>{if(bc.on)bfAnnounce();},4000);
+      bf.lastT=0;bf.state="wait";
+      setTimeout(()=>{bf.state="go";},4000);
+    }else if(bf.qi<bf.queue.length-1){
+      bf.qi++;bf.rep=1;
+      aiSay("다음 운동으로 넘어갑니다");
+      setTimeout(()=>{if(bc.on)bfAnnounce();},2500);
+      bf.state="wait";setTimeout(()=>{bf.state="go";},2500);
+      bf.acc=0;
+    }else{
+      bfFinish();return;
+    }
+  }
+  bf.raf=requestAnimationFrame(()=>{if(bf.state==="go"||bf.state==="wait")bfLoop();});
+}
+function bfFinish(){
+  bcStopCam();
+  const names=[...new Set(bf.queue.map(e=>e.name))];
+  state.workouts.push({id:uid(),date:todayStr(),type:"근력운동",minutes:Math.max(1,Math.round(bf.queue.reduce((s,e)=>s+e.hold*e.reps,0)/60)),sets:null,
+    kcalBurned:estBurn("요가",bf.queue.reduce((s,e)=>s+e.hold*e.reps,0)/60,bodyWeight(todayStr())),
+    memo:"밸런스 운동: "+names.join(" · "),createdAt:Date.now()});
+  save();renderWorkout();
+  document.getElementById("bcCam").style.display="none";
+  document.getElementById("bcReport").style.display="";
+  aiSay("밸런스 운동 완료! 수고하셨습니다");
+  toast("밸런스 운동 저장 완료");
+}
 function openRouteView(w){
   if(!w.route||!w.route.length){toast("저장된 경로가 없어요");return;}
   document.getElementById("routeTitle").textContent=`🗺 ${w.type} 경로`;
