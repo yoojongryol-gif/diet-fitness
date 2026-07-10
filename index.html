@@ -1756,7 +1756,7 @@ const ai={lm:null,stream:null,raf:0,on:false,reps:0,startAt:0,timer:0,
 /* 각도 스무딩(EMA) — 프레임 흔들림으로 인한 카운트 누락/중복 방지 (7/9 실기기 피드백) */
 function aiSmooth(key,v){
   if(v==null){delete ai.sm[key];return null;}
-  const p=ai.sm[key];const nv=p==null?v:p*0.55+v*0.45;
+  const p=ai.sm[key];const nv=p==null?v:p*0.35+v*0.65; // 좌표 스무딩 추가로 각도 EMA는 경량화
   ai.sm[key]=nv;return nv;
 }
 async function aiStartCam(){
@@ -1807,6 +1807,31 @@ function aiBodyScale(l){ // 신체 세로 스케일: 어깨~발목 (없으면 �
   if(sh!=null&&ank!=null)return Math.abs(ank-sh);
   if(sh!=null&&hip!=null)return Math.abs(hip-sh)*2.2;
   return null;
+}
+/* 랜드마크 좌표 스무딩 — '선 흔들림' 자체를 제거 (7/10 사장님 관찰: 흔들리는 선=노이즈원) */
+function aiSmoothLms(bag,lms,a=0.45){
+  if(!bag.lmPrev||bag.lmPrev.length!==lms.length){bag.lmPrev=lms.map(q=>({x:q.x,y:q.y,visibility:q.visibility}));return bag.lmPrev;}
+  bag.lmPrev=lms.map((q,i)=>{const o=bag.lmPrev[i];
+    return {x:o.x+(q.x-o.x)*a,y:o.y+(q.y-o.y)*a,visibility:q.visibility};});
+  return bag.lmPrev;
+}
+/* 운동별 단순 스켈레톤 (필요한 뼈대만 — 시각 노이즈 최소화) */
+const AI_SEG={
+  "하체":[[11,12],[23,24],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28]],
+  "상체":[[11,12],[23,24],[11,23],[12,24],[11,13],[13,15],[12,14],[14,16]],
+  "전신":[[11,12],[23,24],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28],[11,13],[13,15],[12,14],[14,16]],
+};
+function aiSegOf(ex){
+  if(["스쿼트","점프 스쿼트","런지","점프 런지"].includes(ex))return AI_SEG["하체"];
+  const c=(state.customEx||[]).find(x=>x.name===ex);
+  if(c)return c.kind==="상체"?AI_SEG["상체"]:c.kind==="하체"?AI_SEG["하체"]:AI_SEG["전신"];
+  return AI_SEG["전신"];
+}
+function aiDrawSkel(ctx,l,segs,w,h){
+  ctx.strokeStyle="#4ade80";ctx.lineWidth=5;ctx.lineCap="round";
+  segs.forEach(([a,b])=>{
+    if((l[a].visibility??1)<0.5||(l[b].visibility??1)<0.5)return;
+    ctx.beginPath();ctx.moveTo(l[a].x*w,l[a].y*h);ctx.lineTo(l[b].x*w,l[b].y*h);ctx.stroke();});
 }
 /* 동작별 카운터: mk()=상태 생성, step(state, landmarks, hintFn) → "rep" | undefined */
 const AI_DET={
@@ -1943,7 +1968,7 @@ async function aiOpen(){
 }
 async function aiBegin(cfg){ // cfg={items:[{ex,reps}], sets, rest} — 한 세트=동작 시퀀스 전체(서킷)
   ai.items=cfg.items;ai.sets=cfg.sets||1;ai.restLen=cfg.rest||15;
-  ai.ii=0;ai.setNo=1;ai.reps=0;ai.mode="work";ai.log={};ai.sm={};ai.lastRep=0;
+  ai.ii=0;ai.setNo=1;ai.reps=0;ai.mode="work";ai.log={};ai.sm={};ai.lastRep=0;ai.lmPrev=null;
   const cur=ai.items[0];ai.target=cur.reps;ai.exState=aiDet(cur.ex).mk();
   document.getElementById("aiSetup").style.display="none";
   document.getElementById("aiWork").style.display="";
@@ -2031,13 +2056,15 @@ function aiLoop(){
     if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
     const res=ai.lm.detectForVideo(vid,performance.now());
     const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
-    const lms=res.landmarks&&res.landmarks[0];
-    if(lms){
-      new ai.draw(ctx).drawConnectors(lms,ai.conns,{color:"#4ade80",lineWidth:3});
+    const raw=res.landmarks&&res.landmarks[0];
+    if(raw){
+      const lms=aiSmoothLms(ai,raw); // 좌표 스무딩 → 선 안정 + 각도 계산도 동일 좌표 사용
       const cur=ai.items[ai.ii];
+      aiDrawSkel(ctx,lms,aiSegOf(cur.ex),cv.width,cv.height);
       const H=t=>{document.getElementById("aiHint").textContent=t;};
       if(aiDet(cur.ex).step(ai.exState,lms,H)==="rep")aiRepDone();
     }else{
+      ai.lmPrev=null;
       document.getElementById("aiHint").textContent="사람이 안 보여요 — 화면 안에 서주세요";
     }
   }
@@ -2203,11 +2230,12 @@ function bcLoop(){
     if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
     const res=ai.lm.detectForVideo(vid,performance.now());
     const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
-    const lms=res.landmarks&&res.landmarks[0];
-    if(lms){
-      new ai.draw(ctx).drawConnectors(lms,ai.conns,{color:"#38bdf8",lineWidth:3});
+    const raw=res.landmarks&&res.landmarks[0];
+    if(raw){
+      const lms=aiSmoothLms(bc,raw);
+      aiDrawSkel(ctx,lms,AI_SEG["전신"],cv.width,cv.height);
       if(bc.collecting)bc.frames.push(lms);
-    }
+    }else{bc.lmPrev=null;}
   }
   bc.raf=requestAnimationFrame(bcLoop);
 }
