@@ -1798,24 +1798,65 @@ function aiStanceSplit(l){ // 런지: 발이 앞뒤로 벌어짐 (측면 기준 
   const sw=Math.abs(l[11].x-l[12].x)||0.08;
   return Math.abs(l[27].x-l[28].x)>sw*1.1;
 }
+function aiMidY(l,a,b){ // 두 랜드마크 y 평균 (보이는 것만)
+  const ys=[a,b].filter(i=>aiVis(l,i)).map(i=>l[i].y);
+  return ys.length?ys.reduce((s,y)=>s+y,0)/ys.length:null;
+}
+function aiBodyScale(l){ // 신체 세로 스케일: 어깨~발목 (없으면 어깨~엉덩이×2.2)
+  const sh=aiMidY(l,11,12),ank=aiMidY(l,27,28),hip=aiMidY(l,23,24);
+  if(sh!=null&&ank!=null)return Math.abs(ank-sh);
+  if(sh!=null&&hip!=null)return Math.abs(hip-sh)*2.2;
+  return null;
+}
 /* 동작별 카운터: mk()=상태 생성, step(state, landmarks, hintFn) → "rep" | undefined */
 const AI_DET={
-  "스쿼트":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
-    if(s.ph==="up"&&k<120){s.ph="down";s.dAt=Date.now();s.minA=k;}
-    else if(s.ph==="down"){s.minA=Math.min(s.minA,k);
-      if(k>150){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}  // 250ms 미만 = 경계 떨림, 무효
+  "스쿼트":{mk:()=>({ph:"up",hipBase:null}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
+    const hip=aiMidY(l,23,24);
+    if(s.ph==="up"){
+      if(hip!=null)s.hipBase=s.hipBase==null?hip:Math.min(s.hipBase,hip); // 서있을 때 엉덩이 기준선
+      if(k<120){s.ph="down";s.dAt=Date.now();s.minA=k;s.hipMax=hip;}
+    }else{
+      s.minA=Math.min(s.minA,k);
+      if(hip!=null)s.hipMax=Math.max(s.hipMax??hip,hip);
+      if(k>150){s.ph="up";
+        const sc=aiBodyScale(l),drop=(s.hipMax!=null&&s.hipBase!=null)?s.hipMax-s.hipBase:null;
+        const moved=(sc==null||drop==null)?true:drop>sc*0.08; // 실제로 앉았는가 (팬텀 차단)
+        if(Date.now()-s.dAt>250&&moved){s.lastMin=s.minA;return "rep";}
+      }
+    }
     H(s.ph==="down"?"일어나세요!":(k<145?"조금 더 깊이!":`무릎 ${Math.round(k)}°`));}},
-  "런지":{mk:()=>({ph:"up"}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요");
-    if(s.ph==="up"&&k<125){s.ph="down";s.dAt=Date.now();s.minA=k;}
-    else if(s.ph==="down"){s.minA=Math.min(s.minA,k);
-      if(k>150){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}
+  "런지":{mk:()=>({ph:"up",hipBase:null}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요");
+    const hip=aiMidY(l,23,24);
+    if(s.ph==="up"){
+      if(hip!=null)s.hipBase=s.hipBase==null?hip:Math.min(s.hipBase,hip);
+      if(k<125){s.ph="down";s.dAt=Date.now();s.minA=k;s.hipMax=hip;}
+    }else{
+      s.minA=Math.min(s.minA,k);
+      if(hip!=null)s.hipMax=Math.max(s.hipMax??hip,hip);
+      if(k>150){s.ph="up";
+        const sc=aiBodyScale(l),drop=(s.hipMax!=null&&s.hipBase!=null)?s.hipMax-s.hipBase:null;
+        const moved=(sc==null||drop==null)?true:drop>sc*0.08;
+        if(Date.now()-s.dAt>250&&moved){s.lastMin=s.minA;return "rep";}
+      }
+    }
     H(s.ph==="down"?"일어나세요!":"한 발 앞으로, 무릎 90°까지");}},
   "팔굽혀펴기":{mk:()=>({ph:"up"}),step(s,l,H){
     if(!aiTorsoHoriz(l))return H("옆에서 몸이 수평으로 보이게 엎드리세요");
     const e=aiSmooth("elbow",aiElbow(l));if(e==null)return H("팔이 안 보여요");
-    if(s.ph==="up"&&e<100){s.ph="down";s.dAt=Date.now();s.minA=e;}
-    else if(s.ph==="down"){s.minA=Math.min(s.minA,e);
-      if(e>140){s.ph="up";if(Date.now()-s.dAt>250){s.lastMin=s.minA;return "rep";}}}
+    const shY=aiMidY(l,11,12),hpY=aiMidY(l,23,24);
+    if(s.ph==="up"){
+      if(shY!=null)s.shBase=s.shBase==null?shY:Math.min(s.shBase,shY);
+      if(e<100){s.ph="down";s.dAt=Date.now();s.minA=e;s.shMax=shY;}
+    }else{
+      s.minA=Math.min(s.minA,e);
+      if(shY!=null)s.shMax=Math.max(s.shMax??shY,shY);
+      if(e>140){s.ph="up";
+        const torso=(shY!=null&&hpY!=null)?Math.abs(hpY-shY)||0.2:null;
+        const drop=(s.shMax!=null&&s.shBase!=null)?s.shMax-s.shBase:null;
+        const moved=(torso==null||drop==null)?true:drop>torso*0.12;
+        if(Date.now()-s.dAt>250&&moved){s.lastMin=s.minA;return "rep";}
+      }
+    }
     H(s.ph==="down"?"밀어 올리세요!":`팔꿈치 ${Math.round(e)}°`);}},
   "버피":{mk:()=>({st:"stand"}),step(s,l,H){
     const horiz=aiTorsoHoriz(l),k=aiKnee(l);
