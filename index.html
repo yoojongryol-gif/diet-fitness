@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.06.19b-->
+<!--APPVER:2026.07.10a-->
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,8 +11,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="식단운동">
 <meta name="theme-color" content="#ffffff">
-<title>식단·운동 관리</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>">
+<title>식단·운동 관리 — AI 홈트 코치</title>
+<meta name="description" content="폰 카메라가 스쿼트·푸쉬업을 세어주는 AI 홈트 코치. 식단·체중·체형 관리까지 설치 없이 바로.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AI 홈트 코치 — 식단·운동 관리">
+<meta property="og:description" content="폰 카메라가 스쿼트·푸쉬업을 세어주는 AI 홈트 + 식단·체중·체형 관리. 설치 없이 바로 사용.">
+<meta property="og:image" content="https://yoojongryol-gif.github.io/diet-fitness/og-image.png">
+<meta property="og:url" content="https://yoojongryol-gif.github.io/diet-fitness/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -506,6 +513,7 @@
     </div>
     <div class="gps-actions" style="margin-top:10px">
       <button id="aiSaveBtn" style="background:var(--green)">💾 저장하고 종료</button>
+      <button id="aiShareBtn" style="background:var(--accent)">📤 공유</button>
       <button id="aiCloseBtn" style="background:var(--red)">✕ 닫기</button>
     </div>
     </div><!-- /aiWork -->
@@ -643,10 +651,15 @@
     <div class="menu-item" id="mLockMode"><span class="mi">🔑</span><span id="mLockModeLabel">잠금 방식: 비밀번호</span></div>
     <p style="color:var(--muted);font-size:12px;margin:6px 2px 0;line-height:1.6">암호(4~6자리) 또는 Face ID/지문으로 앱을 잠글 수 있어요. 잠금 방식에서 원하는 해제 방법을 고르세요.</p>
 
+    <h3 style="margin-top:22px">🔊 소리</h3>
+    <div class="menu-item" id="mVoice"><span class="mi">🗣️</span><span id="mVoiceLbl">음성 안내: 켜짐</span></div>
+    <div class="menu-item" id="mBeep"><span class="mi">🔔</span><span id="mBeepLbl">효과음: 켜짐</span></div>
+
     <h3 style="margin-top:22px">📦 데이터</h3>
     <div class="menu-item" id="mExport"><span class="mi">⬇️</span>파일로 내보내기</div>
     <div class="menu-item" id="mImport"><span class="mi">⬆️</span>파일에서 가져오기</div>
     <div class="menu-item" id="mReset" style="color:var(--red)"><span class="mi">🗑️</span>전체 초기화</div>
+    <div class="menu-item" id="mErrLog"><span class="mi">🐞</span>오류 로그 복사 (문제 신고용)</div>
     <input type="file" id="importFile" accept="application/json" style="display:none">
     <p style="color:var(--muted);font-size:12px;margin-top:18px;line-height:1.6">
       💡 데이터는 이 기기 + 구글 드라이브에 백업됩니다.<br>
@@ -680,7 +693,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.06.19b";
+const APP_VER="2026.07.10a";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -799,7 +812,7 @@ function exIcon(t){return EX_ICON[t]||"🏋️";}
 
 /* ===================== 탭 전환 ===================== */
 function switchTab(tab){
-  curTab=tab;
+  curTab=tab;gaEv("tab_view",{tab});
   const views={diet:"dietView",workout:"workoutView",body:"bodyView",health:"healthView",stats:"statsView"};
   const tabs={diet:"tabDiet",workout:"tabWorkout",body:"tabBody",health:"tabHealth",stats:"tabStats"};
   Object.entries(views).forEach(([k,id])=>document.getElementById(id).classList.toggle("on",k===tab));
@@ -1942,8 +1955,9 @@ function aiDet(ex){
   return AI_DET["스쿼트"];
 }
 
-function aiSay(t){try{const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.08;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){}}
+function aiSay(t){if(!sndOn("voice"))return;try{const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.08;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){}}
 function aiBeep(freq=880,dur=0.08){
+  if(!sndOn("beep"))return;
   try{
     const ctx=ai.actx||(ai.actx=new (window.AudioContext||window.webkitAudioContext)());
     const o=ctx.createOscillator(),g=ctx.createGain();
@@ -2005,6 +2019,7 @@ async function aiOpen(){
 async function aiBegin(cfg){ // cfg={items:[{ex,reps}], sets, rest} — 한 세트=동작 시퀀스 전체(서킷)
   ai.items=cfg.items;ai.sets=cfg.sets||1;ai.restLen=cfg.rest||15;
   ai.ii=0;ai.setNo=1;ai.reps=0;ai.mode="work";ai.log={};ai.sm={};ai.lastRep=0;ai.lmPrev=null;
+  aiWakeAcq();gaEv("ai_session_start",{routine:(cfg.items||[]).map(i=>i.ex).join(",")});
   const cur=ai.items[0];ai.target=cur.reps;ai.exState=aiDet(cur.ex).mk();
   document.getElementById("aiSetup").style.display="none";
   document.getElementById("aiWork").style.display="";
@@ -2109,7 +2124,7 @@ function aiLoop(){
   ai.raf=requestAnimationFrame(aiLoop);
 }
 function aiStop(){
-  ai.on=false;cancelAnimationFrame(ai.raf);clearInterval(ai.timer);clearInterval(ai.restIv);
+  ai.on=false;aiWakeRel();cancelAnimationFrame(ai.raf);clearInterval(ai.timer);clearInterval(ai.restIv);
   try{speechSynthesis.cancel();}catch(e){}
   if(ai.stream){ai.stream.getTracks().forEach(t=>t.stop());ai.stream=null;}
 }
@@ -2122,6 +2137,7 @@ function aiSave(){
       memo:"AI 루틴: "+parts.join(" · "),createdAt:Date.now()});
     save();selDate=todayStr();renderWorkout();renderDiet();
     toast(`저장 완료 · ${parts.join(", ")} · ${min}분`);
+    gaEv("ai_session_save",{detail:parts.join(","),minutes:min});
   }else{toast("카운트가 없어 저장하지 않았어요");}
   if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];save();}
   aiStop();closeOverlay("aiSheet");
@@ -2250,7 +2266,7 @@ async function bcStart(){
     }
     await bcCam();
     bcTiltOn();
-    bc.on=true;bc.phase="front";bc.res={};bc.retry=0;
+    bc.on=true;bc.phase="front";bc.res={};bc.retry=0;aiWakeAcq();
     aiSay("정면 측정을 시작합니다. 카메라를 정면으로 보고 바르게 서주세요");
     document.getElementById("bcPhaseLbl").textContent="① 정면 측정";
     bcCountdownThenCapture();
@@ -2382,6 +2398,7 @@ function bcFinish(){
   state.bodyChecks.push({date:todayStr(),front:f,side:s,at:Date.now()});
   save();
   const fb=document.getElementById("bfStartBtn");if(fb)fb.onclick=()=>bfStart(bc.lastIssues);
+  gaEv("body_check_done");
   aiSay("측정이 끝났습니다. 결과를 확인하세요");
 }
 function bcLoop(){
@@ -2402,7 +2419,7 @@ function bcLoop(){
   bc.raf=requestAnimationFrame(bcLoop);
 }
 function bcStopCam(){
-  bc.on=false;cancelAnimationFrame(bc.raf);bcTiltOff();
+  bc.on=false;aiWakeRel();cancelAnimationFrame(bc.raf);bcTiltOff();
   if(bc.stream){bc.stream.getTracks().forEach(t=>t.stop());bc.stream=null;}
 }
 function bcClose(){bcStopCam();closeOverlay("bodySheet");}
@@ -2454,7 +2471,7 @@ function bfStart(issues){
   bf.qi=0;bf.rep=1;bf.acc=0;bf.state="go";
   document.getElementById("bcReport").style.display="none";
   document.getElementById("bcCam").style.display="";
-  bc.on=true;bc.lmPrev=null;
+  bc.on=true;bc.lmPrev=null;aiWakeAcq();
   if(!bc.stream){bcRecam();}else{bfAnnounce();bfLoop();}
 }
 async function bfRecam(){
@@ -2525,6 +2542,7 @@ function bfFinish(){
   save();renderWorkout();
   document.getElementById("bcCam").style.display="none";
   document.getElementById("bcReport").style.display="";
+  gaEv("balance_done");
   aiSay("밸런스 운동 완료! 수고하셨습니다");
   toast("밸런스 운동 저장 완료");
 }
@@ -2762,6 +2780,7 @@ function init(){
   document.getElementById("gpsOpenBtn").onclick=openGpsSheet;
   document.getElementById("aiSquatBtn").onclick=aiOpen;
   document.getElementById("aiSaveBtn").onclick=aiSave;
+  document.getElementById("aiShareBtn").onclick=aiShare;
   document.getElementById("aiCloseBtn").onclick=aiClose;
   document.getElementById("aiAddRow").onclick=()=>{aiCurRoutine().items.push({ex:"스쿼트",reps:10});save();aiRenderRows();};
   document.getElementById("aiNewEx").onclick=()=>{
@@ -2924,6 +2943,101 @@ function checkWatchImport(){
   };
   checkWatchImport();
 })();
+
+/* ===================== 품질 인프라 (2026-07-10): WakeLock·에러로그·소리·GA4·공유·설치·SW ===================== */
+/* 화면 꺼짐 방지 — AI 카운팅·체형체크·따라하기 중 (GPS는 자체 gpsWakeLock 유지) */
+let aiWakeL=null;
+async function aiWakeAcq(){try{if("wakeLock" in navigator)aiWakeL=await navigator.wakeLock.request("screen");}catch(e){aiWakeL=null;}}
+function aiWakeRel(){try{if(aiWakeL)aiWakeL.release();}catch(e){}aiWakeL=null;}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&(ai.on||bc.on))aiWakeAcq();});
+
+/* 에러 링버퍼 — 폰에서 죽으면 설정→오류 로그 복사로 원인 확보 */
+const ERRKEY="dietFitness.errlog";
+function logErr(m){try{const a=JSON.parse(localStorage.getItem(ERRKEY)||"[]");a.push({t:new Date().toISOString().slice(0,19),m:String(m).slice(0,300)});while(a.length>20)a.shift();localStorage.setItem(ERRKEY,JSON.stringify(a));}catch(e){}}
+window.addEventListener("error",e=>logErr((e.message||"err")+" @"+String(e.filename||"").split("/").pop()+":"+e.lineno));
+window.addEventListener("unhandledrejection",e=>logErr("promise: "+((e.reason&&e.reason.message)||e.reason)));
+
+/* 소리 설정 */
+function sndOn(k){return localStorage.getItem("snd."+k)!=="0";}
+(function(){
+  const V=document.getElementById("mVoice"),B=document.getElementById("mBeep");
+  function lbl(){document.getElementById("mVoiceLbl").textContent="음성 안내: "+(sndOn("voice")?"켜짐":"꺼짐");document.getElementById("mBeepLbl").textContent="효과음: "+(sndOn("beep")?"켜짐":"꺼짐");}
+  if(V)V.onclick=()=>{localStorage.setItem("snd.voice",sndOn("voice")?"0":"1");lbl();};
+  if(B)B.onclick=()=>{localStorage.setItem("snd.beep",sndOn("beep")?"0":"1");lbl();if(sndOn("beep"))aiBeep();};
+  if(V)lbl();
+  const E=document.getElementById("mErrLog");
+  if(E)E.onclick=async()=>{
+    const a=JSON.parse(localStorage.getItem(ERRKEY)||"[]");
+    if(!a.length){toast("오류 기록이 없어요 👍");return;}
+    const txt=a.map(x=>x.t+" "+x.m).join("\n");
+    try{await navigator.clipboard.writeText(txt);toast(`오류 ${a.length}건 복사됨 — 붙여넣어 보내주세요`);}
+    catch(e){toast("복사 실패 · 최근: "+a[a.length-1].m);}
+  };
+})();
+
+/* GA4 — ID 비우면 완전 비활성 (측정 없이는 수익화 판단 불가 → 배선만 상시) */
+const GA4_ID="";
+function gaEv(n,p){try{if(window.gtag)gtag("event",n,p||{});}catch(e){}}
+(function(){
+  if(!GA4_ID)return;
+  const s=document.createElement("script");s.async=true;s.src="https://www.googletagmanager.com/gtag/js?id="+GA4_ID;document.head.appendChild(s);
+  window.dataLayer=window.dataLayer||[];window.gtag=function(){dataLayer.push(arguments);};
+  gtag("js",new Date());gtag("config",GA4_ID);
+})();
+
+/* 운동 결과 공유 카드 — 유일한 유기적 유입 루프 */
+async function aiShare(){
+  const parts=Object.entries(ai.log||{}).map(([ex,n])=>`${ex} ${n}회`);
+  if(!parts.length){toast("아직 카운트가 없어요");return;}
+  const min=Math.max(1,Math.round((Date.now()-(ai.startAt||Date.now()))/60000));
+  const url="https://yoojongryol-gif.github.io/diet-fitness/";
+  const text=`오늘의 AI 홈트 기록 💪\n${parts.join(" · ")} · ${min}분\n${url}`;
+  try{
+    const cv=document.createElement("canvas");cv.width=1080;cv.height=1350;
+    const x=cv.getContext("2d");
+    const g=x.createLinearGradient(0,0,0,1350);g.addColorStop(0,"#4f46e5");g.addColorStop(1,"#16a34a");
+    x.fillStyle=g;x.fillRect(0,0,1080,1350);
+    x.fillStyle="#fff";x.textAlign="center";
+    x.font="bold 76px sans-serif";x.fillText("오늘의 AI 홈트 💪",540,220);
+    x.font="44px sans-serif";x.fillText(new Date().toLocaleDateString("ko-KR"),540,310);
+    x.font="bold 62px sans-serif";
+    parts.slice(0,8).forEach((t,i)=>x.fillText(t,540,480+i*96));
+    x.font="40px sans-serif";x.fillText(`총 ${min}분 · 카메라가 직접 센 기록`,540,1180);
+    x.font="36px sans-serif";x.fillText(url.replace("https://",""),540,1280);
+    const blob=await new Promise(r=>cv.toBlob(r,"image/png"));
+    const f=new File([blob],"workout.png",{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],text});gaEv("share",{method:"image"});return;}
+  }catch(e){if(e&&e.name==="AbortError")return;}
+  try{await navigator.share({text});gaEv("share",{method:"text"});}
+  catch(e){
+    if(e&&e.name==="AbortError")return;
+    try{await navigator.clipboard.writeText(text);toast("기록이 복사됐어요 — 붙여넣어 공유하세요");}
+    catch(_){toast("공유를 지원하지 않는 브라우저예요");}
+  }
+}
+
+/* PWA 설치 유도 — 3회 방문 후 1회 배너 (안드로이드; iOS는 설정 안내 유지) */
+let bipEvt=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();bipEvt=e;maybeInstallBanner();});
+function maybeInstallBanner(){
+  try{
+    if(!bipEvt)return;
+    if(matchMedia("(display-mode: standalone)").matches)return;
+    if(localStorage.getItem("instDismiss"))return;
+    if((+localStorage.getItem("visits")||0)<3)return;
+    if(document.getElementById("instBanner"))return;
+    const d=document.createElement("div");d.id="instBanner";
+    d.style.cssText="position:fixed;left:12px;right:12px;bottom:calc(72px + var(--safe-bot));z-index:400;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,.18)";
+    d.innerHTML='<span style="font-size:24px">📱</span><span style="flex:1;font-size:13px;line-height:1.4">홈 화면에 설치하면 앱처럼 빠르게 열 수 있어요</span><button id="instGo" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-weight:700">설치</button><button id="instNo" style="background:none;border:none;color:var(--muted);font-size:13px">나중에</button>';
+    document.body.appendChild(d);
+    document.getElementById("instGo").onclick=async()=>{d.remove();try{bipEvt.prompt();const r=await bipEvt.userChoice;gaEv("pwa_install",{outcome:r.outcome});}catch(e){}bipEvt=null;};
+    document.getElementById("instNo").onclick=()=>{localStorage.setItem("instDismiss","1");d.remove();};
+  }catch(e){}
+}
+(function(){try{const v=(+localStorage.getItem("visits")||0)+1;localStorage.setItem("visits",String(v));maybeInstallBanner();}catch(e){}})();
+
+/* 서비스워커 — CDN 대형 자산(모델·wasm) 캐시로 2회차 시작 가속 + 오프라인 */
+if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});}
 </script>
 </body>
 </html>
