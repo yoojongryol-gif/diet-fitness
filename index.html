@@ -534,6 +534,7 @@
       <div style="position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden">
         <video id="bcVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
         <canvas id="bcCanvas" style="position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)"></canvas>
+        <button id="bcFlipBtn" style="position:absolute;top:8px;right:8px;z-index:5;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;font-size:20px">🔄</button>
         <div id="bcBig" style="position:absolute;top:8px;left:0;right:0;text-align:center;font-size:56px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)"></div>
         <div id="bcMsg" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">준비 중…</div>
       </div>
@@ -2093,7 +2094,21 @@ function aiClose(){
   aiStop();closeOverlay("aiSheet");}
 
 /* ===================== 체형 밸런스 체크 (2단계) ===================== */
-const bc={on:false,raf:0,stream:null,phase:"front",frames:[],collecting:false,res:{}};
+const bc={on:false,raf:0,stream:null,phase:"front",frames:[],collecting:false,res:{},facing:"user"};
+async function bcCam(){
+  if(bc.stream){bc.stream.getTracks().forEach(t=>t.stop());bc.stream=null;}
+  bc.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:bc.facing,width:{ideal:720},height:{ideal:960}},audio:false});
+  const vid=document.getElementById("bcVideo"),cv=document.getElementById("bcCanvas");
+  const mir=bc.facing==="user"?"scaleX(-1)":"none";
+  vid.style.transform=mir;cv.style.transform=mir;
+  vid.srcObject=bc.stream;await vid.play();
+  bc.lmPrev=null;
+}
+async function bcFlip(){
+  bc.facing=bc.facing==="user"?"environment":"user";
+  try{await bcCam();toast(bc.facing==="user"?"전면 카메라":"후면 카메라");}
+  catch(e){bc.facing=bc.facing==="user"?"environment":"user";toast("카메라 전환 실패");}
+}
 const BC_REC={
   shoulder:["벽 천사(월 엔젤) 10회 × 2세트","높은 쪽 어깨 으쓱 후 이완 스트레칭 30초"],
   pelvis:["힙 브릿지 12회 × 2세트","사이드 플랭크 20초 × 2 (낮은 쪽)"],
@@ -2129,9 +2144,7 @@ async function bcStart(){
         runningMode:"VIDEO",numPoses:1});
       ai.draw=v.DrawingUtils;ai.conns=v.PoseLandmarker.POSE_CONNECTIONS;
     }
-    bc.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:720},height:{ideal:960}},audio:false});
-    const vid=document.getElementById("bcVideo");
-    vid.srcObject=bc.stream;await vid.play();
+    await bcCam();
     bc.on=true;bc.phase="front";bc.res={};
     aiSay("정면 측정을 시작합니다. 카메라를 정면으로 보고 바르게 서주세요");
     document.getElementById("bcPhaseLbl").textContent="① 정면 측정";
@@ -2300,12 +2313,8 @@ function bfStart(issues){
   if(!bc.stream){bcRecam();}else{bfAnnounce();bfLoop();}
 }
 async function bfRecam(){
-  try{
-    bc.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:720},height:{ideal:960}},audio:false});
-    const vid=document.getElementById("bcVideo");
-    vid.srcObject=bc.stream;await vid.play();
-    bfAnnounce();bfLoop();
-  }catch(e){document.getElementById("bcMsg").textContent="카메라 실패: "+(e.message||e);}
+  try{await bcCam();bfAnnounce();bfLoop();}
+  catch(e){document.getElementById("bcMsg").textContent="카메라 실패: "+(e.message||e);}
 }
 function bfAnnounce(){
   const ex=bf.queue[bf.qi];
@@ -2626,6 +2635,7 @@ function init(){
   document.getElementById("bodyCheckBtn").onclick=bcOpen;
   document.getElementById("bcStartBtn").onclick=bcStart;
   document.getElementById("bcCloseBtn").onclick=bcClose;
+  document.getElementById("bcFlipBtn").onclick=bcFlip;
   new MutationObserver(()=>{const s=document.getElementById("bodySheet");if(s&&!s.classList.contains("open")&&bc.on)bcStopCam();})
     .observe(document.getElementById("bodySheet"),{attributes:true,attributeFilter:["class"]});
   document.getElementById("aiRoutineSel").onchange=e=>{state.aiRoutineSel=+e.target.value;save();aiRenderRows();};
