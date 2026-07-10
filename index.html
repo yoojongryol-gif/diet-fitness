@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.10b-->
+<!--APPVER:2026.07.11a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -693,7 +693,7 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.07.10b";
+const APP_VER="2026.07.11a";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
@@ -2158,6 +2158,24 @@ function bcTiltOn(){
 }
 function bcTiltOff(){if(bc._th)window.removeEventListener("deviceorientation",bc._th);bc.tilt=null;}
 /* ② 방향 판별: 어깨 가로폭 vs 몸통 세로 비율 */
+/* 서있음 게이트 (2026-07-11 사장님): 앉아서는 측정 금지 — 무릎각 + 다리/몸통 비율 이중 체크 */
+function bcStanding(l){
+  if(!l)return {ok:false,hint:"화면 안에 서주세요"};
+  if([25,26,27,28].filter(i=>aiVis(l,i)).length<2)
+    return {ok:false,hint:"다리·발목까지 전신이 보이게 서주세요"};
+  let ang=null;
+  for(const [h,k,a] of [[23,25,27],[24,26,28]]){
+    if(aiVis(l,h)&&aiVis(l,k)&&aiVis(l,a)){
+      const v=aiAngle(l[h],l[k],l[a]);
+      ang=ang==null?v:Math.max(ang,v);
+    }
+  }
+  if(ang!=null&&ang<150)return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
+  const sh=aiMidY(l,11,12),hp=aiMidY(l,23,24),an=aiMidY(l,27,28);
+  if(sh!=null&&hp!=null&&an!=null&&Math.abs(an-hp)<Math.abs(hp-sh)*1.0)
+    return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
+  return {ok:true};
+}
 function bcOrient(l){
   if(!l||![11,12].every(i=>aiVis(l,i)))return null;
   const span=Math.abs(l[11].x-l[12].x);
@@ -2282,6 +2300,8 @@ function bcCountdownThenCapture(){
     const now=performance.now(),dt=now-last;last=now;
     if(bc.tilt!=null&&Math.abs(bc.tilt)>4){
       document.getElementById("bcMsg").textContent=`📱 폰이 ${Math.round(Math.abs(bc.tilt))}° 기울었어요 — 수직으로 세워주세요`;okMs=0;return;}
+    const st=bcStanding(bc.lastLms);
+    if(!st.ok){document.getElementById("bcMsg").textContent=st.hint;okMs=0;return;}
     const o=bcOrient(bc.lastLms);
     if(o!==bc.phase){
       document.getElementById("bcMsg").textContent=bc.phase==="front"?"카메라를 정면으로 봐주세요 (양쪽 어깨가 보이게)":"몸을 옆으로 더 돌려주세요";okMs=0;return;}
@@ -2298,11 +2318,20 @@ function bcCount5(){
     if(!bc.on){clearInterval(iv);return;}
     document.getElementById("bcBig").textContent=t>0?t:"측정 중";
     if(t<=3&&t>0)aiSay(String(t));
+    const st=bcStanding(bc.lastLms);
+    if(!st.ok){clearInterval(iv);document.getElementById("bcMsg").textContent=st.hint;aiSay("일어서 주세요");bcCountdownThenCapture();return;}
     if(t<=0){
       clearInterval(iv);
       bc.frames=[];bc.collecting=true;
       document.getElementById("bcMsg").textContent="그대로 계세요… 측정 중";
-      setTimeout(()=>{bc.collecting=false;bcPhaseDone();},2500);
+      // 진행 카운터: 측정 중인지 눈에 보이게 (2.5초 → 0~100%)
+      const t0=Date.now();
+      const pv=setInterval(()=>{
+        if(!bc.on||!bc.collecting){clearInterval(pv);return;}
+        document.getElementById("bcBig").textContent="📸 "+Math.min(99,Math.round((Date.now()-t0)/25))+"%";
+      },100);
+      setTimeout(()=>{bc.collecting=false;clearInterval(pv);
+        document.getElementById("bcBig").textContent="100%";aiBeep(990,0.12);bcPhaseDone();},2500);
     }
   },1000);
 }

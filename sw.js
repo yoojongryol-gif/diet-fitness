@@ -1,6 +1,6 @@
 /* diet-fitness 서비스워커 — CDN 대형 자산(MediaPipe 모델·wasm) 캐시 + 오프라인
    주의: VER은 index.html의 APPVER와 함께 올릴 것 (캐시 무효화 기준) */
-const VER = "2026.07.10b";
+const VER = "2026.07.11a";
 const CACHE = "df-" + VER;
 /* cache-first 대상: 버전 고정 CDN (내용 불변) */
 const CDN_HOSTS = ["cdn.jsdelivr.net", "storage.googleapis.com", "unpkg.com"];
