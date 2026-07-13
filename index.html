@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.11a-->
+<!--APPVER:2026.07.13a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -481,6 +481,7 @@
       <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px">
         <input id="aiSetsN" type="number" min="1" max="9" value="2" style="width:44px;padding:8px;border-radius:10px;text-align:center">세트 · 휴식 <input id="aiRestSec" type="number" min="5" max="180" value="15" style="width:52px;padding:8px;border-radius:10px;text-align:center">초
         <span style="flex:1"></span>
+        <button id="aiLvlDur" style="padding:8px 10px;border-radius:10px;background:var(--green,#22c55e);color:#fff;border:none;font-size:12px;font-weight:700">⏱ 15분</button>
         <button class="ai-lvl" data-lvl="초급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">초급</button>
         <button class="ai-lvl" data-lvl="중급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">중급</button>
         <button class="ai-lvl" data-lvl="고급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">고급</button>
@@ -735,10 +736,18 @@ function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 /* ===================== 저장 ===================== */
 function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];
   // AI 루틴 다중 프리셋 (구 aiRoutine 단일 → aiRoutines 마이그레이션)
-  if(!state.aiRoutines||!state.aiRoutines.length){
-    const legacy=state.aiRoutine&&state.aiRoutine.length?state.aiRoutine:[{ex:"스쿼트",reps:10,sets:3}];
-    state.aiRoutines=[{name:"기본 루틴",rest:15,items:legacy}];
+  if(!state.aiRoutines)state.aiRoutines=[];
+  // 구 aiRoutine 단일 루틴 사용자만 이관 (신규는 아래 레벨 프리셋 6종으로 시작)
+  if(!state.aiRoutines.length&&state.aiRoutine&&state.aiRoutine.length)
+    state.aiRoutines=[{name:"내 루틴",rest:15,items:state.aiRoutine}];
+  // 7/13: '기본/초급/중급/고급 루틴' 구프리셋 은퇴 → 레벨×시간 6종(초/중/고급 × 15/30분) 1회 시딩 (지운 프리셋 부활 방지)
+  if(!state._lvlV2Seeded){
+    state.aiRoutines=state.aiRoutines.filter(r=>!["기본 루틴","초급 루틴","중급 루틴","고급 루틴"].includes(r.name));
+    Object.values(AI_LEVELS).forEach(tpl=>{
+      if(!state.aiRoutines.some(r=>r.name===tpl.name))state.aiRoutines.push(JSON.parse(JSON.stringify(tpl)));});
+    state._lvlV2Seeded=1;
   }
+  if(!state.aiRoutines.length)state.aiRoutines=[JSON.parse(JSON.stringify(AI_LEVELS["초급 15분"]))];
   state.aiRoutines.forEach(r=>{r.rest=r.rest||15;
     if(!r.sets)r.sets=(r.items&&r.items[0]&&r.items[0].sets)||2; // 구조 v3: 세트=서킷 반복수 (구 item.sets에서 이관)
     r.items=(r.items&&r.items.length?r.items:[{ex:"스쿼트",reps:10}]).map(it=>({ex:it.ex,reps:it.reps||10}));});
@@ -1865,21 +1874,20 @@ const AI_DET={
       }
     }
     H(s.ph==="down"?"일어나세요!":(k<145?"조금 더 깊이!":`무릎 ${Math.round(k)}°`));}},
-  "런지":{mk:()=>({ph:"up",hipBase:null}),step(s,l,H){const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요");
-    const hip=aiMidY(l,23,24);
+  /* 런지: 골반 높이 사이클 — 좌우 어느 발이 앞이든 동일하게 잡힘 (7/13: 좌우 교대 시 무릎각 방식이 씹히던 버그 수리) */
+  "런지":{mk:()=>({ph:"up",base:null}),step(s,l,H){
+    const hip=aiSmooth("hipY",aiMidY(l,23,24)),sc=aiBodyScale(l);
+    if(hip==null||sc==null)return H("하체가 안 보여요");
     if(s.ph==="up"){
-      if(hip!=null)s.hipBase=s.hipBase==null?hip:Math.min(s.hipBase,hip);
-      if(k<125){s.ph="down";s.dAt=Date.now();s.minA=k;s.hipMax=hip;}
+      s.base=s.base==null?hip:Math.min(s.base,hip); // 서있을 때 골반 기준선
+      if(hip>s.base+sc*0.10){s.ph="down";s.dAt=Date.now();s.maxH=hip;}
+      H("한 발 앞으로 깊이 — 좌우 교대 OK");
     }else{
-      s.minA=Math.min(s.minA,k);
-      if(hip!=null)s.hipMax=Math.max(s.hipMax??hip,hip);
-      if(k>150){s.ph="up";
-        const sc=aiBodyScale(l),drop=(s.hipMax!=null&&s.hipBase!=null)?s.hipMax-s.hipBase:null;
-        const moved=(sc==null||drop==null)?true:drop>sc*0.08;
-        if(Date.now()-s.dAt>250&&moved){s.lastMin=s.minA;return "rep";}
-      }
-    }
-    H(s.ph==="down"?"일어나세요!":"한 발 앞으로, 무릎 90°까지");}},
+      s.maxH=Math.max(s.maxH,hip);
+      if(hip<s.base+sc*0.05&&Date.now()-s.dAt>250){s.ph="up";
+        s.lastMin=Math.round((s.maxH-s.base)/sc*100);return "rep";}
+      H("일어나세요!");
+    }}},
   "팔굽혀펴기":{mk:()=>({ph:"up"}),step(s,l,H){
     if(!aiTorsoHoriz(l))return H("옆에서 몸이 수평으로 보이게 엎드리세요");
     const e=aiSmooth("elbow",aiElbow(l));if(e==null)return H("팔이 안 보여요");
@@ -1898,13 +1906,48 @@ const AI_DET={
       }
     }
     H(s.ph==="down"?"밀어 올리세요!":`팔꿈치 ${Math.round(e)}°`);}},
-  "버피":{mk:()=>({st:"stand"}),step(s,l,H){
-    const horiz=aiTorsoHoriz(l),k=aiKnee(l);
-    if(s.st==="stand"&&horiz){s.st="plank";H("엎드림 확인 — 일어나서 점프!");}
-    else if(s.st==="plank"&&!horiz&&k!=null&&k>150){s.st="stand";return "rep";}
-    else H(s.st==="plank"?"일어나서 점프!":"엎드렸다가 일어나며 점프");}},
+  /* 버피: 연속 프레임 확인+최소 체류시간 — 1프레임 흔들림에 내려갈 때·올라올 때 3~4회 중복 카운트되던 버그 수리 (7/13) */
+  "버피":{mk:()=>({st:"stand",hz:0,up:0,pAt:0}),step(s,l,H){
+    const horiz=aiTorsoHoriz(l),k=aiKnee(l),now=Date.now();
+    if(s.st==="stand"){
+      if(horiz){if(++s.hz>=6){s.st="plank";s.pAt=now;s.hz=0;s.up=0;}}
+      else s.hz=0;
+      H("엎드렸다가 일어나며 점프");
+    }else{ // plank: 완전히 서야(토르소 수직+무릎 펴짐, 연속 유지) 1회
+      if(!horiz&&k!=null&&k>150){
+        if(++s.up>=6&&now-s.pAt>800){s.st="stand";s.up=0;return "rep";}
+      }else s.up=0;
+      H("일어나서 점프!");
+    }}},
 };
-AI_DET["점프 스쿼트"]=AI_DET["스쿼트"]; // 무릎각 사이클 동일 (점프 검증은 추후 업데이트)
+/* 점프 스쿼트: 스쿼트 사이클 + 공중 확인(골반/발목이 기준선 위로 뜸) — 일반 스쿼트와 구분 (7/13) */
+AI_DET["점프 스쿼트"]={mk:()=>({ph:"up",hipBase:null,ankBase:null}),step(s,l,H){
+  const k=aiSmooth("knee",aiKnee(l));if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
+  const hip=aiMidY(l,23,24),ank=aiMidY(l,27,28),sc=aiBodyScale(l);
+  if(s.ph==="up"){
+    if(k>155){ // 서있는 프레임만 기준선 반영 (착지 직후·공중 프레임 오염 방지, 느린 EMA)
+      if(hip!=null)s.hipBase=s.hipBase==null?hip:s.hipBase*0.9+hip*0.1;
+      if(ank!=null)s.ankBase=s.ankBase==null?ank:s.ankBase*0.9+ank*0.1;
+    }
+    if(k<120){s.ph="down";s.dAt=Date.now();s.minA=k;s.hipMax=hip;}
+    H(`무릎 ${Math.round(k)}° — 앉았다가 점프!`);
+  }else if(s.ph==="down"){
+    s.minA=Math.min(s.minA,k);
+    if(hip!=null)s.hipMax=Math.max(s.hipMax??hip,hip);
+    if(k>150){
+      const drop=(s.hipMax!=null&&s.hipBase!=null)?s.hipMax-s.hipBase:null;
+      const moved=(sc==null||drop==null)?true:drop>sc*0.08;
+      if(Date.now()-s.dAt>250&&moved){s.ph="air";s.aAt=Date.now();}
+      else s.ph="up";
+    }
+    H("일어나며 점프!");
+  }else{ // air: 점프가 실측돼야 카운트
+    const hipUp=(hip!=null&&s.hipBase!=null&&sc!=null)&&(s.hipBase-hip)>sc*0.035;
+    const ankUp=(ank!=null&&s.ankBase!=null&&sc!=null)&&(s.ankBase-ank)>sc*0.035;
+    if(hipUp||ankUp){s.ph="up";s.lastMin=s.minA;return "rep";}
+    if(Date.now()-s.aAt>1000){s.ph="up";return H("점프가 없었어요 — 점프해야 카운트!");}
+    H("점프!");
+  }}};
 AI_DET["점프 런지"]=AI_DET["런지"];
 /* 양쪽 교대형: 왼쪽+오른쪽 각 1번씩 완성돼야 1회 (사장님 지정 규칙, 7/10) */
 function aiAltDet(opts){
@@ -1967,11 +2010,15 @@ function aiBeep(freq=880,dur=0.08){
   }catch(e){}
 }
 
-/* 레벨별 기본 루틴 (초급: 낮은 강도·긴 휴식 → 고급: 점프·버피 포함·짧은 휴식) */
+/* 레벨×시간 프리셋 6종 (7/13 개편: 사장님 실측 고급 구판 7분 → 15/30분 체계·동작 5~7종으로 증량)
+   시간 산정: 회당 스쿼트류 2.5s·팔굽 2s·버피 4s·교대형 2s + 세트간 휴식 + 후반 피로 감속 */
 const AI_LEVELS={
-  "초급":{name:"초급 루틴",rest:30,sets:2,items:[{ex:"스쿼트",reps:10},{ex:"런지",reps:8},{ex:"팔굽혀펴기",reps:5}]},
-  "중급":{name:"중급 루틴",rest:20,sets:3,items:[{ex:"스쿼트",reps:15},{ex:"런지",reps:12},{ex:"팔굽혀펴기",reps:10}]},
-  "고급":{name:"고급 루틴",rest:15,sets:3,items:[{ex:"점프 스쿼트",reps:15},{ex:"점프 런지",reps:12},{ex:"팔굽혀펴기",reps:15},{ex:"버피",reps:10}]},
+  "초급 15분":{name:"초급 15분",rest:30,sets:3,items:[{ex:"스쿼트",reps:15},{ex:"무릎 터치",reps:20},{ex:"런지",reps:12},{ex:"팔굽혀펴기",reps:8},{ex:"마운틴 클라이머",reps:12}]},
+  "초급 30분":{name:"초급 30분",rest:40,sets:4,items:[{ex:"스쿼트",reps:20},{ex:"무릎 터치",reps:25},{ex:"런지",reps:15},{ex:"팔굽혀펴기",reps:10},{ex:"마운틴 클라이머",reps:15},{ex:"버피",reps:5}]},
+  "중급 15분":{name:"중급 15분",rest:20,sets:3,items:[{ex:"스쿼트",reps:20},{ex:"런지",reps:15},{ex:"점프 스쿼트",reps:10},{ex:"팔굽혀펴기",reps:12},{ex:"마운틴 클라이머",reps:15},{ex:"버피",reps:8}]},
+  "중급 30분":{name:"중급 30분",rest:30,sets:4,items:[{ex:"스쿼트",reps:25},{ex:"런지",reps:20},{ex:"점프 스쿼트",reps:12},{ex:"팔굽혀펴기",reps:15},{ex:"무릎 터치",reps:20},{ex:"마운틴 클라이머",reps:18},{ex:"버피",reps:10}]},
+  "고급 15분":{name:"고급 15분",rest:15,sets:3,items:[{ex:"점프 스쿼트",reps:20},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:18},{ex:"마운틴 클라이머",reps:20},{ex:"버피",reps:12},{ex:"스쿼트",reps:15}]},
+  "고급 30분":{name:"고급 30분",rest:25,sets:4,items:[{ex:"점프 스쿼트",reps:20},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:20},{ex:"무릎 터치",reps:25},{ex:"마운틴 클라이머",reps:25},{ex:"버피",reps:12},{ex:"스쿼트",reps:20}]},
 };
 
 /* ── 루틴 세팅 UI (다중 프리셋) ── */
@@ -2844,8 +2891,11 @@ function init(){
     if(state.aiRoutines.length<=1){toast("마지막 루틴은 삭제할 수 없어요");return;}
     if(!confirm(`'${aiCurRoutine().name}' 루틴을 삭제할까요?`))return;
     state.aiRoutines.splice(state.aiRoutineSel,1);state.aiRoutineSel=0;save();aiRenderRows();};
+  let aiLvlDur="15분"; // 레벨 버튼과 조합: 초/중/고급 × 15/30분
+  document.getElementById("aiLvlDur").onclick=e=>{
+    aiLvlDur=aiLvlDur==="15분"?"30분":"15분";e.target.textContent="⏱ "+aiLvlDur;};
   document.querySelectorAll(".ai-lvl").forEach(b=>b.onclick=()=>{
-    const tpl=AI_LEVELS[b.dataset.lvl];
+    const tpl=AI_LEVELS[`${b.dataset.lvl} ${aiLvlDur}`];
     const ex=state.aiRoutines.findIndex(r=>r.name===tpl.name);
     if(ex>=0){state.aiRoutineSel=ex;toast(`${tpl.name} 선택`);}
     else{state.aiRoutines.push(JSON.parse(JSON.stringify(tpl)));state.aiRoutineSel=state.aiRoutines.length-1;toast(`${tpl.name} 추가 — 수정해서 쓰셔도 돼요`);}
