@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.13b-->
+<!--APPVER:2026.07.13c-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -2197,13 +2197,21 @@ function aiClose(){
 const bc={on:false,raf:0,stream:null,phase:"front",frames:[],collecting:false,res:{},facing:"user",tilt:null,lastLms:null,retry:0,lmm:null};
 /* ① 폰 기울기 센서 (수평 게이트용) */
 function bcTiltOn(){
-  bc._th=e=>{if(e.gamma!=null)bc.tilt=e.gamma;};
-  const D=window.DeviceOrientationEvent;
+  /* 7/13: gamma(자이로)는 폰을 수직으로 세우면 짐벌락으로 값이 튐 → 중력벡터(devicemotion) 기반 좌우 기울기로 교체 */
+  bc.tilt=null;
+  bc._th=e=>{
+    const g=e.accelerationIncludingGravity;
+    if(!g||g.x==null||g.y==null)return;
+    let t=Math.atan2(g.x,g.y)*180/Math.PI; // 0=수직 직립(포트레이트), 좌우 기울면 커짐
+    if(t>90)t-=180; if(t<-90)t+=180;       // iOS 중력부호 반전·뒤집힘 보정 (절대값만 씀)
+    bc.tilt=bc.tilt==null?t:bc.tilt*0.7+t*0.3; // 노이즈 EMA
+  };
+  const D=window.DeviceMotionEvent;
   if(!D)return;
-  if(D.requestPermission){D.requestPermission().then(pm=>{if(pm==="granted")window.addEventListener("deviceorientation",bc._th);}).catch(()=>{});}
-  else window.addEventListener("deviceorientation",bc._th);
+  if(D.requestPermission){D.requestPermission().then(pm=>{if(pm==="granted")window.addEventListener("devicemotion",bc._th);}).catch(()=>{});}
+  else window.addEventListener("devicemotion",bc._th);
 }
-function bcTiltOff(){if(bc._th)window.removeEventListener("deviceorientation",bc._th);bc.tilt=null;}
+function bcTiltOff(){if(bc._th)window.removeEventListener("devicemotion",bc._th);bc.tilt=null;}
 /* ② 방향 판별: 어깨 가로폭 vs 몸통 세로 비율 */
 /* 서있음 게이트 (2026-07-11 사장님): 앉아서는 측정 금지 — 무릎각 + 다리/몸통 비율 이중 체크 */
 function bcStanding(l){
@@ -2219,7 +2227,8 @@ function bcStanding(l){
   }
   if(ang!=null&&ang<150)return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
   const sh=aiMidY(l,11,12),hp=aiMidY(l,23,24),an=aiMidY(l,27,28);
-  if(sh!=null&&hp!=null&&an!=null&&Math.abs(an-hp)<Math.abs(hp-sh)*1.0)
+  // 7/13: 1.0→0.85 — 카메라가 낮거나 위를 향하면 서있어도 다리 y범위가 줄어 오판하던 여유 확보 (앉으면 ~0.3대라 계속 잡힘)
+  if(sh!=null&&hp!=null&&an!=null&&Math.abs(an-hp)<Math.abs(hp-sh)*0.85)
     return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
   return {ok:true};
 }
@@ -2230,7 +2239,7 @@ function bcOrient(l){
   if(sh==null||hp==null)return null;
   const torso=Math.abs(hp-sh)||1e-6;
   if(span>torso*0.55)return "front";
-  if(span<torso*0.32)return "side";
+  if(span<torso*0.42)return "side"; // 7/13: 0.32→0.42 — 정면도 측면도 아닌 사각지대(무한 "옆으로 돌려주세요") 축소
   return null;
 }
 /* ③ 측정 신뢰도: 핵심 관절 인식 확신도 + 흔들림(표준편차) */
@@ -2345,7 +2354,7 @@ function bcCountdownThenCapture(){
   const gate=setInterval(()=>{
     if(!bc.on){clearInterval(gate);return;}
     const now=performance.now(),dt=now-last;last=now;
-    if(bc.tilt!=null&&Math.abs(bc.tilt)>4){
+    if(bc.tilt!=null&&Math.abs(bc.tilt)>6){ // 7/13: 4→6° (거치 현실 여유)
       document.getElementById("bcMsg").textContent=`📱 폰이 ${Math.round(Math.abs(bc.tilt))}° 기울었어요 — 수직으로 세워주세요`;okMs=0;return;}
     const st=bcStanding(bc.lastLms);
     if(!st.ok){document.getElementById("bcMsg").textContent=st.hint;okMs=0;return;}
@@ -2358,7 +2367,7 @@ function bcCountdownThenCapture(){
   },150);
 }
 function bcCount5(){
-  let t=5;
+  let t=5,failCnt=0;
   document.getElementById("bcBig").textContent=t;
   const iv=setInterval(()=>{
     t--;
@@ -2366,7 +2375,9 @@ function bcCount5(){
     document.getElementById("bcBig").textContent=t>0?t:"측정 중";
     if(t<=3&&t>0)aiSay(String(t));
     const st=bcStanding(bc.lastLms);
-    if(!st.ok){clearInterval(iv);document.getElementById("bcMsg").textContent=st.hint;aiSay("일어서 주세요");bcCountdownThenCapture();return;}
+    // 7/13: 1프레임 인식 끊김에도 처음으로 되돌아가던 것 → 2초 연속 실패일 때만 리셋
+    if(!st.ok){failCnt++;if(failCnt>=2){clearInterval(iv);document.getElementById("bcMsg").textContent=st.hint;aiSay("일어서 주세요");bcCountdownThenCapture();return;}}
+    else failCnt=0;
     if(t<=0){
       clearInterval(iv);
       bc.frames=[];bc.collecting=true;
