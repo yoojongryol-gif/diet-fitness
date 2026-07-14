@@ -3,7 +3,7 @@
    7/14: CDN 캐시를 앱 버전과 분리(CDN_CACHE 고정) — 종전엔 버전 올릴 때마다 MediaPipe ~10MB
    재다운로드되어 "모델 준비 중" 수십초 = 측정/카메라 먹통처럼 보이던 실사고. CDN URL은
    버전 고정(불변)이라 영구 보존이 맞음. */
-const VER = "2026.07.14g";
+const VER = "2026.07.15a";
 const CACHE = "df-" + VER;          // 앱 셸(index 등) — 버전마다 갱신
 const CDN_CACHE = "df-cdn-v1";      // CDN 불변 자산 — 앱 버전과 무관하게 유지
 /* cache-first 대상: 버전 고정 CDN (내용 불변) */
