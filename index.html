@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.13c-->
+<!--APPVER:2026.07.14a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -2226,9 +2226,11 @@ function bcStanding(l){
     }
   }
   if(ang!=null&&ang<150)return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
+  /* 7/14 사장님 실기기: 낮은 거치 카메라의 원근 압축 때문에 "바로 서면" 다리/몸통 비율이 오히려 실패하고
+     허리를 숙여야 통과하는 역전 발생 → 비율 체크는 무릎각을 못 잴 때만 보조 넷으로 강등(0.6).
+     서있음 판정 주력은 무릎각(직선은 원근에도 직선 = 각도 왜곡 없음). */
   const sh=aiMidY(l,11,12),hp=aiMidY(l,23,24),an=aiMidY(l,27,28);
-  // 7/13: 1.0→0.85 — 카메라가 낮거나 위를 향하면 서있어도 다리 y범위가 줄어 오판하던 여유 확보 (앉으면 ~0.3대라 계속 잡힘)
-  if(sh!=null&&hp!=null&&an!=null&&Math.abs(an-hp)<Math.abs(hp-sh)*0.85)
+  if(ang==null&&sh!=null&&hp!=null&&an!=null&&Math.abs(an-hp)<Math.abs(hp-sh)*0.6)
     return {ok:false,hint:"🪑 앉아서는 측정할 수 없어요 — 일어서 주세요"};
   return {ok:true};
 }
@@ -2559,7 +2561,7 @@ function bfStart(issues){
   document.getElementById("bcReport").style.display="none";
   document.getElementById("bcCam").style.display="";
   bc.on=true;bc.lmPrev=null;aiWakeAcq();
-  if(!bc.stream){bcRecam();}else{bfAnnounce();bfLoop();}
+  if(!bc.stream){bfRecam();}else{bfAnnounce();bfLoop();} // 7/14: bcRecam 오타(미정의 함수)로 따라하기 시작 즉사하던 버그
 }
 async function bfRecam(){
   try{await bcCam();bfAnnounce();bfLoop();}
