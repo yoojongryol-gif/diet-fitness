@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.14a-->
+<!--APPVER:2026.07.14b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -694,10 +694,18 @@ const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
 const KEY="dietFitness.v1";
-const APP_VER="2026.07.11a";
+/* 앱 버전 = 문서 상단 APPVER 주석이 단일 소스.
+   7/14: 별도 APP_VER 상수가 화근 — 배포 때 주석만 올리면 상수와 영구 불일치 →
+   매 실행 강제 새로고침 → 잠금 생체인증이 2번 뜨던 버그. 상수 제거, 자기 문서에서 직접 읽음. */
+function _appVer(){
+  try{for(const n of document.head.childNodes){if(n.nodeType===8){const m=/APPVER:(\S+)/.exec(n.textContent);if(m)return m[1];}}}catch(e){}
+  return null;
+}
+const APP_VER=_appVer()||"?";
 /* 자동 업데이트 — 폰이 옛 버전 캐시를 들고 있어도 최신으로 새로고침 */
 (function checkAppUpdate(){
   try{
+    if(APP_VER==="?")return; // 자기 버전을 못 읽으면 새로고침 판단 금지 (루프 방지 fail-safe)
     fetch(location.pathname+"?_v="+Date.now(),{cache:"no-store"}).then(r=>r.text()).then(html=>{
       const m=html.match(/<!--APPVER:([^>]+?)-->/);
       if(m&&m[1]&&m[1]!==APP_VER){
