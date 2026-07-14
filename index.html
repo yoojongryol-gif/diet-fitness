@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.14f-->
+<!--APPVER:2026.07.14g-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -2678,11 +2678,13 @@ async function bfRecam(){
 function bfAnnounce(){
   const ex=bf.queue[bf.qi];
   bfDemoStart(ex.key); // 좌상단 동작 시연 애니
-  document.getElementById("bcPhaseLbl").textContent=`${bf.qi+1}/${bf.queue.length} · ${ex.name} · ${bf.rep}/${ex.reps}회`;
-  document.getElementById("bcBig").textContent=ex.hold;
+  const hold=ex.kind==="hold";
+  // 7/14 사장님: 유지형/시간형 구분 안 됨 → 유형을 라벨·음성·카운터에 명시
+  document.getElementById("bcPhaseLbl").textContent=`${bf.qi+1}/${bf.queue.length} · ${ex.name} · ${bf.rep}/${ex.reps}회 · ${hold?"🧘 자세 유지형":"⏱ 시간형"}`;
+  document.getElementById("bcBig").textContent=(hold?"🧘 ":"⏱ ")+ex.hold+"초";
   document.getElementById("bcMsg").textContent=ex.tip;
-  aiSay(`${ex.name}. ${ex.tip}`);
-  bf.acc=0;bf.lastT=0;bf.saidSec=-1;
+  aiSay(`${ex.name}, ${bf.rep}회째. ${hold?`자세를 잡으면 ${ex.hold}초 유지하는 운동이에요`:`${ex.hold}초 동안 동작을 반복하는 운동이에요`}. ${ex.tip}`);
+  bf.acc=0;bf.lastT=0;bf.saidSec=-1;bf.saidHalf=false;bf.saidHold=false;
 }
 function bfLoop(){
   if(!bc.on)return;
@@ -2703,18 +2705,20 @@ function bfLoop(){
         const c=ex.check(lms);
         ok=c.ok;
         if(!c.ok&&c.hint)document.getElementById("bcMsg").textContent=c.hint;
-        else if(c.ok)document.getElementById("bcMsg").textContent="좋아요, 유지하세요!";
+        else if(c.ok){document.getElementById("bcMsg").textContent="좋아요, 그대로 유지!";
+          if(!bf.saidHold){bf.saidHold=true;aiSay("좋아요, 그대로! 이제 초를 셀게요");}}
       }
     }else if(ex.kind==="hold"){ok=false;bc.lmPrev=null;}
   }
   if(ok)bf.acc+=dt;
   const remain=Math.max(0,Math.ceil(ex.hold-bf.acc/1000));
-  document.getElementById("bcBig").textContent=remain;
+  document.getElementById("bcBig").textContent=(ex.kind==="hold"?"🧘 ":"⏱ ")+remain;
+  if(!bf.saidHalf&&ok&&bf.acc>=ex.hold*500&&ex.hold>=15){bf.saidHalf=true;aiSay("절반 왔어요, 좋아요!");}
   if(remain<=3&&remain>0&&bf.saidSec!==remain&&ok){bf.saidSec=remain;aiSay(String(remain));}
   if(bf.acc>=ex.hold*1000){
     aiBeep(990,0.15);
     if(bf.rep<ex.reps){
-      bf.rep++;aiSay(`좋아요! ${bf.rep}회째, 잠깐 쉬었다 다시`);
+      bf.rep++;aiSay(`${ex.kind==="hold"?"잘 버텼어요!":"시간 완료!"} 잠깐 쉬었다 ${bf.rep}회째 갑니다`);
       bf.acc=0;bf.saidSec=-1;
       setTimeout(()=>{if(bc.on)bfAnnounce();},4000);
       bf.lastT=0;bf.state="wait";
