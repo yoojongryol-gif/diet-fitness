@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.14e-->
+<!--APPVER:2026.07.14f-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -2008,7 +2008,20 @@ function aiDet(ex){
   return AI_DET["스쿼트"];
 }
 
-function aiSay(t){if(!sndOn("voice"))return;try{const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.08;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){}}
+/* 모바일 TTS (7/14 사장님 "폰에서 음성 안 나옴" 수리):
+   ①모바일 브라우저는 첫 speak()가 사용자 탭 안에서 시작돼야 이후 자동 발화 허용 → 시트 열기/시작 탭에서 ttsPrime()
+   ②Android Chrome은 cancel() 직후 speak()가 무음 실패 → 한 틱 띄우고 resume()으로 고착 해제 */
+let _ttsPrimed=false;
+function ttsPrime(){
+  if(_ttsPrimed||!window.speechSynthesis)return;
+  try{const u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);_ttsPrimed=true;}catch(e){}
+}
+function aiSay(t){if(!sndOn("voice")||!window.speechSynthesis)return;try{
+  const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.08;
+  const busy=speechSynthesis.speaking||speechSynthesis.pending;
+  if(busy)speechSynthesis.cancel();
+  setTimeout(()=>{try{speechSynthesis.speak(u);speechSynthesis.resume();}catch(e){}},busy?60:0);
+}catch(e){}}
 function aiBeep(freq=880,dur=0.08){
   if(!sndOn("beep"))return;
   try{
@@ -2068,6 +2081,7 @@ function aiRenderRows(){
 }
 
 async function aiOpen(){
+  ttsPrime(); // 사용자 탭 컨텍스트에서 TTS 개시 허가 확보
   openOverlay(document.getElementById("aiSheet"));
   document.getElementById("aiSetup").style.display="";
   document.getElementById("aiWork").style.display="none";
@@ -2333,6 +2347,7 @@ function bcTilt(a,b){ // 좌우 기울기: 수평 대비 각도(부호: +면 오
   return Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
 }
 async function bcOpen(){
+  ttsPrime();
   openOverlay(document.getElementById("bodySheet"));
   document.getElementById("bcIntro").style.display="";
   document.getElementById("bcCam").style.display="none";
@@ -2343,6 +2358,7 @@ async function bcOpen(){
       `<div style="font-size:13px;margin-top:4px">📅 ${x.date} — 어깨 ${x.front.shoulder}° · 골반 ${x.front.pelvis}° · 거북목 ${x.side&&x.side.forwardHead!=null?x.side.forwardHead+"°":"-"}</div>`).join(""):"";
 }
 async function bcStart(){
+  ttsPrime();
   document.getElementById("bcIntro").style.display="none";
   document.getElementById("bcCam").style.display="";
   document.getElementById("bcMsg").textContent="AI 모델 준비 중…";
@@ -2645,6 +2661,7 @@ function bfDemoStart(key){
 function bfDemoStop(){clearInterval(_bfAnimIv);const cv=document.getElementById("bfDemo");if(cv)cv.style.display="none";}
 
 function bfStart(issues){
+  ttsPrime();
   const keys=[...new Set((issues||[]).flatMap(k=>BF_MAP[k]||[]))];
   if(!keys.length){toast("추천 운동이 없어요");return;}
   bf.queue=keys.map(k=>Object.assign({key:k},BF_EX[k])); // key=시연 애니 매칭용
