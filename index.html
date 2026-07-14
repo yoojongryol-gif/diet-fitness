@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.15a-->
+<!--APPVER:2026.07.15b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -482,9 +482,10 @@
         <input id="aiSetsN" type="number" min="1" max="9" value="2" style="width:44px;padding:8px;border-radius:10px;text-align:center">세트 · 휴식 <input id="aiRestSec" type="number" min="5" max="180" value="15" style="width:52px;padding:8px;border-radius:10px;text-align:center">초
         <span style="flex:1"></span>
         <button id="aiLvlDur" style="padding:8px 10px;border-radius:10px;background:var(--green,#22c55e);color:#fff;border:none;font-size:12px;font-weight:700">⏱ 15분</button>
-        <button class="ai-lvl" data-lvl="초급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">초급</button>
-        <button class="ai-lvl" data-lvl="중급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">중급</button>
-        <button class="ai-lvl" data-lvl="고급" style="padding:8px 10px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">고급</button>
+        <button class="ai-lvl" data-lvl="초급" style="padding:8px 9px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">초급</button>
+        <button class="ai-lvl" data-lvl="중급" style="padding:8px 9px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">중급</button>
+        <button class="ai-lvl" data-lvl="고급" style="padding:8px 9px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">고급</button>
+        <button class="ai-lvl" data-lvl="마스터" style="padding:8px 9px;border-radius:10px;background:var(--card,#333);border:none;font-size:12px">마스터</button>
       </div>
       <div id="aiRoutineRows"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
@@ -757,6 +758,13 @@ function normalizeState(){state.meals=state.meals||[];state.workouts=state.worko
     Object.values(AI_LEVELS).forEach(tpl=>{
       if(!state.aiRoutines.some(r=>r.name===tpl.name))state.aiRoutines.push(JSON.parse(JSON.stringify(tpl)));});
     state._lvlV2Seeded=1;
+  }
+  // 7/15: 난이도 4단계(초/중/고/마스터) 개편 — 프리셋명 루틴을 새 정의로 교체(난이도 재조정 반영), 커스텀 보존
+  if(!state._lvlV3Seeded){
+    const presetNames=Object.keys(AI_LEVELS);
+    const customs=state.aiRoutines.filter(r=>!presetNames.includes(r.name));
+    state.aiRoutines=Object.values(AI_LEVELS).map(t=>JSON.parse(JSON.stringify(t))).concat(customs);
+    state._lvlV3Seeded=1;
   }
   if(!state.aiRoutines.length)state.aiRoutines=[JSON.parse(JSON.stringify(AI_LEVELS["초급 15분"]))];
   state.aiRoutines.forEach(r=>{r.rest=r.rest||15;
@@ -2100,15 +2108,23 @@ function aiBeep(freq=880,dur=0.08){
   }catch(e){}
 }
 
-/* 레벨×시간 프리셋 6종 (7/13 개편: 사장님 실측 고급 구판 7분 → 15/30분 체계·동작 5~7종으로 증량)
-   시간 산정: 회당 스쿼트류 2.5s·팔굽 2s·버피 4s·교대형 2s + 세트간 휴식 + 후반 피로 감속 */
+/* 난이도 4단계 × 15/30분 프리셋 8종 (7/15 개편: 초급→중급→고급→마스터)
+   초급=누구나 쉽게·재밌게(제자리 리듬동작, 점프·바닥운동 없음, 낮은 횟수·긴 휴식)
+   중급=표준 근력+정적자세 / 고급=점프+코어 / 마스터=최고강도+시간모드 AMRAP+긴 홀드
+   mode:"time"=N초 최대반복(체력점수), 플랭크·월싯=자동 버티기(reps=초) */
 const AI_LEVELS={
-  "초급 15분":{name:"초급 15분",rest:30,sets:3,items:[{ex:"스쿼트",reps:15},{ex:"무릎 터치",reps:20},{ex:"런지",reps:12},{ex:"팔굽혀펴기",reps:8},{ex:"마운틴 클라이머",reps:12}]},
-  "초급 30분":{name:"초급 30분",rest:40,sets:4,items:[{ex:"스쿼트",reps:20},{ex:"무릎 터치",reps:25},{ex:"런지",reps:15},{ex:"팔굽혀펴기",reps:10},{ex:"마운틴 클라이머",reps:15},{ex:"버피",reps:5}]},
-  "중급 15분":{name:"중급 15분",rest:20,sets:3,items:[{ex:"스쿼트",reps:20},{ex:"런지",reps:15},{ex:"점프 스쿼트",reps:10},{ex:"팔굽혀펴기",reps:12},{ex:"마운틴 클라이머",reps:15},{ex:"버피",reps:8}]},
-  "중급 30분":{name:"중급 30분",rest:30,sets:4,items:[{ex:"스쿼트",reps:25},{ex:"런지",reps:20},{ex:"점프 스쿼트",reps:12},{ex:"팔굽혀펴기",reps:15},{ex:"무릎 터치",reps:20},{ex:"마운틴 클라이머",reps:18},{ex:"버피",reps:10}]},
-  "고급 15분":{name:"고급 15분",rest:15,sets:3,items:[{ex:"점프 스쿼트",reps:20},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:18},{ex:"마운틴 클라이머",reps:20},{ex:"버피",reps:12},{ex:"스쿼트",reps:15}]},
-  "고급 30분":{name:"고급 30분",rest:25,sets:4,items:[{ex:"점프 스쿼트",reps:20},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:20},{ex:"무릎 터치",reps:25},{ex:"마운틴 클라이머",reps:25},{ex:"버피",reps:12},{ex:"스쿼트",reps:20}]},
+  // ── 초급: 재밌고 쉽게 (점프X·바닥X, 리듬 위주) ──
+  "초급 15분":{name:"초급 15분",rest:40,sets:3,items:[{ex:"점핑잭",reps:15},{ex:"무릎 터치",reps:20},{ex:"스쿼트",reps:12},{ex:"하이 니",reps:20}]},
+  "초급 30분":{name:"초급 30분",rest:45,sets:4,items:[{ex:"점핑잭",reps:20},{ex:"무릎 터치",reps:25},{ex:"스쿼트",reps:15},{ex:"하이 니",reps:25},{ex:"사이드 런지",reps:10}]},
+  // ── 중급: 표준 근력 + 플랭크 ──
+  "중급 15분":{name:"중급 15분",rest:25,sets:3,items:[{ex:"점핑잭",reps:20},{ex:"스쿼트",reps:18},{ex:"런지",reps:12},{ex:"팔굽혀펴기",reps:10},{ex:"마운틴 클라이머",reps:16},{ex:"플랭크",reps:20}]},
+  "중급 30분":{name:"중급 30분",rest:30,sets:4,items:[{ex:"점핑잭",reps:25},{ex:"스쿼트",reps:22},{ex:"런지",reps:15},{ex:"사이드 런지",reps:12},{ex:"팔굽혀펴기",reps:12},{ex:"마운틴 클라이머",reps:18},{ex:"윗몸일으키기",reps:15},{ex:"플랭크",reps:25}]},
+  // ── 고급: 점프 + 코어 ──
+  "고급 15분":{name:"고급 15분",rest:18,sets:3,items:[{ex:"점프 스쿼트",reps:15},{ex:"점프 런지",reps:12},{ex:"팔굽혀펴기",reps:15},{ex:"버피",reps:8},{ex:"마운틴 클라이머",reps:20},{ex:"플랭크",reps:30}]},
+  "고급 30분":{name:"고급 30분",rest:22,sets:4,items:[{ex:"점프 스쿼트",reps:18},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:18},{ex:"버피",reps:10},{ex:"마운틴 클라이머",reps:24},{ex:"윗몸일으키기",reps:18},{ex:"레그 레이즈",reps:15},{ex:"플랭크",reps:40}]},
+  // ── 마스터: 최고강도 + 시간모드(AMRAP) + 긴 홀드 ──
+  "마스터 15분":{name:"마스터 15분",rest:15,sets:3,items:[{ex:"버피",reps:12},{ex:"점프 스쿼트",reps:20},{ex:"점프 런지",reps:15},{ex:"팔굽혀펴기",reps:40,mode:"time"},{ex:"마운틴 클라이머",reps:30},{ex:"플랭크",reps:45},{ex:"월 싯",reps:40}]},
+  "마스터 30분":{name:"마스터 30분",rest:18,sets:4,items:[{ex:"버피",reps:15},{ex:"점프 스쿼트",reps:25},{ex:"점프 런지",reps:18},{ex:"팔굽혀펴기",reps:45,mode:"time"},{ex:"마운틴 클라이머",reps:45,mode:"time"},{ex:"윗몸일으키기",reps:25},{ex:"레그 레이즈",reps:20},{ex:"플랭크",reps:60},{ex:"월 싯",reps:50}]},
 };
 
 /* ── 루틴 세팅 UI (다중 프리셋) ── */
