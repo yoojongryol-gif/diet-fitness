@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.14d-->
+<!--APPVER:2026.07.14e-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -500,9 +500,9 @@
     <!-- 운동 화면 -->
     <div id="aiWork" style="display:none">
     <div id="aiExLabel" style="text-align:center;font-weight:700;margin:2px 0 6px">-</div>
-    <div id="aiStage" style="position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden">
+    <div id="aiStage" style="position:relative;width:100%;aspect-ratio:3/4;height:min(72dvh,170vw);background:#000;border-radius:14px;overflow:hidden">
       <video id="aiVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
-      <canvas id="aiCanvas" style="position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)"></canvas>
+      <canvas id="aiCanvas" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></canvas>
       <button id="aiFlipBtn" style="position:absolute;top:8px;right:8px;z-index:5;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;font-size:20px">🔄</button>
       <div id="aiCount" style="position:absolute;top:8px;left:0;right:0;text-align:center;font-size:64px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">0</div>
       <div id="aiHint" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">카메라 준비 중…</div>
@@ -540,9 +540,11 @@
     </div>
     <div id="bcCam" style="display:none">
       <div id="bcPhaseLbl" style="text-align:center;font-weight:700;margin:2px 0 6px">정면 측정</div>
-      <div style="position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:14px;overflow:hidden">
+      <!-- 7/14: 3:4 고정→화면 높이 72%까지 (폰에서 절반만 쓰던 문제). 캔버스도 object-fit:cover로 영상과 동일 크롭 정렬 -->
+      <div style="position:relative;width:100%;aspect-ratio:3/4;height:min(72dvh,170vw);background:#000;border-radius:14px;overflow:hidden">
         <video id="bcVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
-        <canvas id="bcCanvas" style="position:absolute;inset:0;width:100%;height:100%;transform:scaleX(-1)"></canvas>
+        <canvas id="bcCanvas" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></canvas>
+        <canvas id="bfDemo" width="110" height="150" style="position:absolute;top:8px;left:8px;z-index:6;background:rgba(0,0,0,.4);border-radius:10px;display:none"></canvas>
         <button id="bcFlipBtn" style="position:absolute;top:8px;right:8px;z-index:5;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;font-size:20px">🔄</button>
         <div id="bcBig" style="position:absolute;top:8px;left:0;right:0;text-align:center;font-size:56px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)"></div>
         <div id="bcMsg" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">준비 중…</div>
@@ -2536,6 +2538,7 @@ function bcLoop(){
 }
 function bcStopCam(){
   bc.on=false;aiWakeRel();cancelAnimationFrame(bc.raf);bcTiltOff();
+  if(typeof bfDemoStop==="function")bfDemoStop();
   if(bc.stream){bc.stream.getTracks().forEach(t=>t.stop());bc.stream=null;}
 }
 function bcClose(){bcStopCam();closeOverlay("bodySheet");}
@@ -2576,14 +2579,75 @@ const BF_EX={
     tip:"손으로 머리를 옆으로 지그시 당기세요 (반대쪽도)"},
   chestStretch:{name:"가슴 스트레칭",kind:"timer",hold:30,reps:1,
     tip:"문틀에 팔을 대고 가슴을 앞으로 열어주세요"},
+  /* 7/14 사장님: 운동 추천 확대 — 부위당 2종으로 */
+  shrugRelax:{name:"어깨 으쓱 후 이완",kind:"timer",hold:20,reps:2,
+    tip:"어깨를 귀까지 으쓱 올려 5초 버티고, 툭 떨어뜨려 이완하세요"},
+  clamshell:{name:"클램셸",kind:"timer",hold:30,reps:2,
+    tip:"옆으로 누워 무릎을 굽히고, 발을 붙인 채 위쪽 무릎을 조개처럼 벌렸다 닫으세요 (약한 쪽이 위)"},
+  oneLegStand:{name:"한 발 서기",kind:"hold",hold:20,reps:2,
+    tip:"한 발을 들고 중심을 잡으세요 (약한 쪽 다리로 서기)",
+    check(l){const a1=aiVis(l,27)?l[27]:null,a2=aiVis(l,28)?l[28]:null;
+      const sh=aiMidY(l,11,12),hp=aiMidY(l,23,24);
+      if(!a1||!a2||sh==null||hp==null)return {ok:false,hint:"전신이 보이게 서주세요"};
+      const torso=Math.abs(hp-sh)||1e-6;
+      return Math.abs(a1.y-a2.y)>torso*0.25?{ok:true}:{ok:false,hint:"한 발을 더 높이 들어주세요"};}},
+  wallHead:{name:"벽 뒤통수 붙이기",kind:"timer",hold:30,reps:1,
+    tip:"벽에 등을 대고 뒤통수를 벽에 붙인 채 턱을 살짝 당겨 유지하세요"},
 };
-const BF_MAP={forwardHead:["chinTuck"],shoulder:["wallAngel"],pelvis:["hipBridge"],
-  center:["sidePlank"],roundShoulder:["yRaise","chestStretch"],head:["neckStretch"]};
+const BF_MAP={forwardHead:["chinTuck","wallHead"],shoulder:["wallAngel","shrugRelax"],pelvis:["hipBridge","clamshell"],
+  center:["sidePlank","oneLegStand"],roundShoulder:["yRaise","chestStretch"],head:["neckStretch","shrugRelax"]};
+
+/* ── 동작 시연 스틱피겨 (7/14 사장님: "짧은 영상" 요청 → 오프라인 키프레임 애니메이션으로) ──
+   포즈 = 11점 [x,y]: 0머리 1목 2골반 3무릎L 4발목L 5무릎R 6발목R 7팔꿈치L 8손목L 9팔꿈치R 10손목R */
+const _ST=[[.5,.10],[.5,.22],[.5,.50],[.44,.70],[.44,.90],[.56,.70],[.56,.90],[.40,.34],[.37,.46],[.60,.34],[.63,.46]]; // 정면 직립
+function _pose(over){const p=_ST.map(q=>q.slice());for(const i in over)p[+i]=over[i];return p;}
+const BF_ANIM={
+  wallAngel:[_pose({7:[.34,.30],8:[.31,.18],9:[.66,.30],10:[.69,.18]}),_pose({7:[.38,.14],8:[.36,.02],9:[.62,.14],10:[.64,.02]})],
+  yRaise:[_pose({}),_pose({7:[.36,.18],8:[.28,.05],9:[.64,.18],10:[.72,.05]})],
+  shrugRelax:[_pose({}),_pose({0:[.5,.08],1:[.5,.19],7:[.40,.30],9:[.60,.30]})],
+  oneLegStand:[_pose({}),_pose({3:[.46,.62],4:[.50,.72],7:[.37,.34],8:[.30,.36],9:[.63,.34],10:[.70,.36]})],
+  neckStretch:[_pose({0:[.44,.11]}),_pose({0:[.56,.11]})],
+  chestStretch:[_pose({}),_pose({7:[.36,.30],8:[.28,.26],9:[.64,.30],10:[.72,.26]})],
+  chinTuck:[
+    [[.60,.10],[.53,.22],[.50,.50],[.51,.70],[.50,.90],[.53,.70],[.54,.90],[.54,.34],[.55,.46],[.54,.34],[.55,.46]],
+    [[.51,.10],[.52,.22],[.50,.50],[.51,.70],[.50,.90],[.53,.70],[.54,.90],[.54,.34],[.55,.46],[.54,.34],[.55,.46]]],
+  hipBridge:[
+    [[.12,.80],[.20,.80],[.44,.82],[.60,.64],[.72,.86],[.62,.66],[.74,.88],[.26,.86],[.32,.90],[.26,.86],[.32,.90]],
+    [[.12,.80],[.20,.78],[.44,.62],[.60,.62],[.72,.86],[.62,.64],[.74,.88],[.26,.86],[.32,.90],[.26,.86],[.32,.90]]],
+  clamshell:[
+    [[.14,.70],[.22,.72],[.42,.76],[.58,.70],[.52,.86],[.58,.68],[.52,.84],[.30,.80],[.34,.84],[.30,.80],[.34,.84]],
+    [[.14,.70],[.22,.72],[.42,.76],[.58,.70],[.52,.86],[.54,.48],[.48,.64],[.30,.80],[.34,.84],[.30,.80],[.34,.84]]],
+  sidePlank:[
+    [[.12,.82],[.20,.82],[.44,.84],[.62,.84],[.78,.84],[.63,.86],[.79,.86],[.24,.90],[.30,.92],[.24,.90],[.30,.92]],
+    [[.14,.58],[.22,.62],[.44,.70],[.62,.78],[.78,.86],[.63,.80],[.79,.88],[.22,.86],[.28,.90],[.22,.86],[.28,.90]]],
+};
+BF_ANIM.wallHead=BF_ANIM.chinTuck;
+let _bfAnimIv=0;
+function bfDemoStart(key){
+  const cv=document.getElementById("bfDemo");if(!cv)return;
+  const frames=BF_ANIM[key];
+  clearInterval(_bfAnimIv);
+  if(!frames){cv.style.display="none";return;}
+  cv.style.display="block";
+  const ctx=cv.getContext("2d"),t0=Date.now();
+  const SEG=[[1,2],[2,3],[3,4],[2,5],[5,6],[1,7],[7,8],[1,9],[9,10],[0,1]];
+  _bfAnimIv=setInterval(()=>{
+    const T=1400,ph=((Date.now()-t0)%(T*2))/T,k=ph<1?ph:2-ph,e=k*k*(3-2*k); // 핑퐁+스무스
+    const A=frames[0],B=frames[1]||frames[0];
+    const P=A.map((p,i)=>[p[0]+(B[i][0]-p[0])*e,p[1]+(B[i][1]-p[1])*e]);
+    const W=cv.width,H=cv.height;
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle="#4ade80";ctx.lineWidth=3;ctx.lineCap="round";
+    SEG.forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(P[a][0]*W,P[a][1]*H);ctx.lineTo(P[b][0]*W,P[b][1]*H);ctx.stroke();});
+    ctx.beginPath();ctx.arc(P[0][0]*W,P[0][1]*H,W*0.075,0,7);ctx.stroke();
+  },50);
+}
+function bfDemoStop(){clearInterval(_bfAnimIv);const cv=document.getElementById("bfDemo");if(cv)cv.style.display="none";}
 
 function bfStart(issues){
   const keys=[...new Set((issues||[]).flatMap(k=>BF_MAP[k]||[]))];
   if(!keys.length){toast("추천 운동이 없어요");return;}
-  bf.queue=keys.map(k=>BF_EX[k]);
+  bf.queue=keys.map(k=>Object.assign({key:k},BF_EX[k])); // key=시연 애니 매칭용
   bf.qi=0;bf.rep=1;bf.acc=0;bf.state="go";
   document.getElementById("bcReport").style.display="none";
   document.getElementById("bcCam").style.display="";
@@ -2596,6 +2660,7 @@ async function bfRecam(){
 }
 function bfAnnounce(){
   const ex=bf.queue[bf.qi];
+  bfDemoStart(ex.key); // 좌상단 동작 시연 애니
   document.getElementById("bcPhaseLbl").textContent=`${bf.qi+1}/${bf.queue.length} · ${ex.name} · ${bf.rep}/${ex.reps}회`;
   document.getElementById("bcBig").textContent=ex.hold;
   document.getElementById("bcMsg").textContent=ex.tip;
