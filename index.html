@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.07.15c-->
+<!--APPVER:2026.08.02a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -250,6 +250,7 @@
 
 <!-- 식단 -->
 <div class="wrap view on" id="dietView">
+  <div id="planCard" style="display:none"></div>
   <div class="date-nav">
     <button id="prevDay">‹</button>
     <div class="date-cur" id="dietDate"></div>
@@ -695,6 +696,121 @@ const MEALS={
   snack:{name:"간식",icon:"🍎"},
 };
 const MEAL_ORDER=["breakfast","lunch","dinner","snack"];
+/* ===================== 8월 운동 플랜 (2026-08-02 시공, 원본: Documents/운동일정_2026_08.md) =====================
+   4주 고강도, 2026-08-03(월,W1)~2026-08-30(일,W4) 28일. 목요일=앱 AMRAP(스쿼트10·점프스쿼트8·런지10·버피5 반복).
+   월/수=앱 카운터 지원 동작 바로가기. 화/금/토/일=덤벨·유산소 위주라 앱 실행불가 → 텍스트+완료체크만. */
+const PLAN_START="2026-08-03",PLAN_END="2026-08-30",PLAN_DAYS=28;
+const PLAN_DOW=["월","화","수","목","금","토","일"];
+const PLAN_THEME=["하체+유산소","상체 덤벨 서킷","인터벌·코어·타바타","전신 AMRAP","덤벨 메트콘","템포 유산소","회복"];
+const PLAN_AMRAP_ITEMS=[{ex:"스쿼트",reps:10},{ex:"점프 스쿼트",reps:8},{ex:"런지",reps:10},{ex:"버피",reps:5}];
+const PLAN_WK=[
+ { rpe:"6~7", d:[
+   {type:"counter",min:30,summary:"스쿼트3×12·런지2×12·점프스쿼트2×10 + DB 스티프레그 데드리프트 2R + 버피 인터벌 5R",
+    counters:[{ex:"스쿼트",reps:12,sets:3},{ex:"런지",reps:12,sets:2},{ex:"점프 스쿼트",reps:10,sets:2},{ex:"버피",reps:9999,sets:1,tag:"인터벌 5R"}]},
+   {type:"text",min:30,summary:"상체 덤벨 서킷 2라운드(프레스·로우·숄더프레스·컬/킥백 각 15~20회, 동작간 20초↓/라운드휴식 60초)"},
+   {type:"counter",min:30,summary:"HIIT 30/30×6R + 타바타 1블록(20/10×8) + 플랭크3×30초",
+    counters:[{ex:"버피",reps:9999,sets:1,tag:"HIIT/타바타"},{ex:"점프 스쿼트",reps:9999,sets:1,tag:"HIIT/타바타"}]},
+   {type:"amrap",min:12,summary:"AMRAP 12분: 스쿼트10·점프스쿼트8·런지10·버피5 반복"},
+   {type:"text",min:30,summary:"덤벨 스러스터·데드리프트·런지+컬·스윙 서킷 3라운드 + 마무리 인터벌 5분"},
+   {type:"text",min:40,summary:"빠른 걷기(경사)+러닝 인터벌 혼합 40분"},
+   {type:"text",min:20,summary:"스트레칭 10분 + 걷기 10분 (회복)"},
+ ]},
+ { rpe:"7~8", d:[
+   {type:"counter",min:33,summary:"스쿼트4×12·런지3×12·점프스쿼트3×10 + DB 스티프레그 3R + 버피 인터벌 6R",
+    counters:[{ex:"스쿼트",reps:12,sets:4},{ex:"런지",reps:12,sets:3},{ex:"점프 스쿼트",reps:10,sets:3},{ex:"버피",reps:9999,sets:1,tag:"인터벌 6R"}]},
+   {type:"text",min:33,summary:"상체 덤벨 서킷 3라운드(동작간 20초↓/라운드휴식 60초)"},
+   {type:"counter",min:33,summary:"HIIT 30/30×8R + 타바타 2블록 + 코어서킷 2회전",
+    counters:[{ex:"버피",reps:9999,sets:1,tag:"HIIT/타바타"},{ex:"점프 스쿼트",reps:9999,sets:1,tag:"HIIT/타바타"}]},
+   {type:"amrap",min:15,summary:"AMRAP 15분: 스쿼트10·점프스쿼트8·런지10·버피5 반복"},
+   {type:"text",min:33,summary:"덤벨 서킷 4라운드 + 마무리 인터벌 6분"},
+   {type:"text",min:40,summary:"빠른 걷기+러닝 인터벌 혼합 40분(러닝 비중↑)"},
+   {type:"text",min:20,summary:"스트레칭 10분 + 걷기 10분 (유지)"},
+ ]},
+ { rpe:"8~9", d:[
+   {type:"counter",min:38,summary:"스쿼트4×15·런지3×15·점프스쿼트4×12 + DB 스티프레그 4R + 버피 인터벌 8R",
+    counters:[{ex:"스쿼트",reps:15,sets:4},{ex:"런지",reps:15,sets:3},{ex:"점프 스쿼트",reps:12,sets:4},{ex:"버피",reps:9999,sets:1,tag:"인터벌 8R"}]},
+   {type:"text",min:38,summary:"상체 덤벨 서킷 4~5라운드(페이스 최대 유지)"},
+   {type:"counter",min:38,summary:"HIIT 30/30×10R + 타바타 3블록 + 코어서킷 3회전",
+    counters:[{ex:"버피",reps:9999,sets:1,tag:"HIIT/타바타"},{ex:"점프 스쿼트",reps:9999,sets:1,tag:"HIIT/타바타"}]},
+   {type:"amrap",min:18,summary:"AMRAP 18분(이번 사이클 최고강도): 스쿼트10·점프스쿼트8·런지10·버피5 반복"},
+   {type:"text",min:38,summary:"덤벨 서킷 4~5라운드(이번 사이클 최대) + 마무리 인터벌 8분"},
+   {type:"text",min:40,summary:"빠른 걷기+러닝 인터벌 40분(최고강도, 러닝 비중 최대)"},
+   {type:"text",min:20,summary:"스트레칭 10분 + 걷기 10분 (유지)"},
+ ]},
+ { rpe:"6", d:[
+   {type:"counter",min:25,summary:"디로드: 스쿼트2×10·런지2×10·점프스쿼트2×8 + DB 스티프레그 2R + 버피 인터벌 4R",
+    counters:[{ex:"스쿼트",reps:10,sets:2},{ex:"런지",reps:10,sets:2},{ex:"점프 스쿼트",reps:8,sets:2},{ex:"버피",reps:9999,sets:1,tag:"인터벌 4R"}]},
+   {type:"text",min:25,summary:"디로드: 상체 덤벨 서킷 2라운드(동작간 30초/휴식 90초로 완화)"},
+   {type:"counter",min:25,summary:"디로드: HIIT 30/30×4R + 타바타 1블록 + 플랭크2×30초",
+    counters:[{ex:"버피",reps:9999,sets:1,tag:"HIIT/타바타"},{ex:"점프 스쿼트",reps:9999,sets:1,tag:"HIIT/타바타"}]},
+   {type:"amrap",min:10,summary:"디로드 AMRAP 10분(볼륨만 축소): 스쿼트10·점프스쿼트8·런지10·버피5 반복"},
+   {type:"text",min:25,summary:"디로드: 덤벨 서킷 2라운드 + 마무리 인터벌 4분"},
+   {type:"text",min:30,summary:"디로드: 빠른 걷기+가벼운 러닝 30분(강도 낮춰 회복 위주)"},
+   {type:"text",min:20,summary:"스트레칭 10분 + 걷기 10분 (그대로 유지 — 축소 안 함)"},
+ ]},
+];
+function planForDate(ds){
+  if(!ds||ds<PLAN_START||ds>PLAN_END)return null;
+  const off=Math.round((parseYmd(ds)-parseYmd(PLAN_START))/86400000);
+  if(off<0||off>=PLAN_DAYS)return null;
+  const week=Math.floor(off/7),dow=off%7,wk=PLAN_WK[week],day=wk.d[dow];
+  return Object.assign({ds,week:week+1,dow,dowName:PLAN_DOW[dow],theme:PLAN_THEME[dow],rpe:wk.rpe},day);
+}
+function planQueryDate(){ // ?plan=YYYYMMDD (마이플래너 딥링크 대비)
+  try{
+    const q=new URLSearchParams(location.search).get("plan");
+    if(q&&/^\d{8}$/.test(q))return q.slice(0,4)+"-"+q.slice(4,6)+"-"+q.slice(6,8);
+  }catch(e){}
+  return null;
+}
+function startPlanCounter(c){ // 월/수 — 앱 카운터 지원 동작을 바로 카운터 화면으로
+  aiOpen();
+  aiBegin({items:[{ex:c.ex,reps:c.reps}],sets:c.sets||1,rest:c.reps===9999?15:30});
+}
+function startPlanAmrap(p){ // 목 — AMRAP 세팅만 하고 시작 화면(루틴 세팅)까지 이동, 카메라는 사장님이 직접 시작
+  const name=`8월 AMRAP W${p.week} ${p.min}분`;
+  let idx=state.aiRoutines.findIndex(r=>r.name===name);
+  if(idx<0){
+    state.aiRoutines.push({name,rest:0,sets:20,items:PLAN_AMRAP_ITEMS.map(it=>({...it,mode:"reps"}))});
+    idx=state.aiRoutines.length-1;
+  }
+  state.aiRoutineSel=idx;save();
+  aiOpen();aiRenderRows();
+  toast(`${name} 세팅 완료 — ▶ 루틴 시작을 눌러주세요`);
+}
+function renderPlanCard(){
+  const el=document.getElementById("planCard");if(!el)return;
+  const ds=planQueryDate()||todayStr();
+  const p=planForDate(ds);
+  if(!p){el.style.display="none";el.innerHTML="";return;}
+  const isToday=ds===todayStr();
+  const typeBadge={amrap:"⏱ AMRAP",counter:"🤖 AI 카운터",text:"📋 수동"}[p.type];
+  let actionsHtml;
+  if(p.type==="amrap"){
+    actionsHtml=`<button class="gps-start-btn plan-amrap-btn" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#22c55e,#16a34a)">▶ AMRAP ${p.min}분 세팅하고 시작화면 열기</button>`;
+  }else if(p.type==="counter"){
+    actionsHtml=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">`+
+      p.counters.map((c,i)=>`<button class="gps-start-btn plan-ex-btn" data-i="${i}" style="flex:1;min-width:112px;background:rgba(255,255,255,.22)">🤖 ${esc(c.tag?`${c.ex} (${c.tag})`:`${c.ex} ${c.sets}×${c.reps}`)}</button>`).join("")+`</div>`;
+  }else{
+    const done=!!(state.planDone&&state.planDone[ds]);
+    actionsHtml=`<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;cursor:pointer;background:rgba(255,255,255,.15);border-radius:10px;padding:8px 10px">
+      <input type="checkbox" id="planDoneChk" ${done?"checked":""}> 오늘 운동 완료 체크(로컬 기록 — 이 앱은 실행 못 하는 파트예요)
+    </label>`;
+  }
+  el.style.display="";
+  el.innerHTML=`<div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-radius:16px;padding:14px 16px;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;opacity:.85">
+      <span>${isToday?"🏋️ 오늘의 운동":"🏋️ "+fmtKDate(ds)+" 운동"}</span><span>${typeBadge}</span>
+    </div>
+    <div style="font-size:17px;font-weight:800;margin-top:4px">W${p.week} · ${p.dowName} ${esc(p.theme)}</div>
+    <div style="font-size:12px;opacity:.85;margin-top:2px">RPE ${p.rpe} · ${p.min}분</div>
+    <div style="font-size:13px;line-height:1.5;margin-top:8px">${esc(p.summary)}</div>
+    ${actionsHtml}
+  </div>`;
+  if(p.type==="amrap")document.querySelector(".plan-amrap-btn").onclick=()=>startPlanAmrap(p);
+  else if(p.type==="counter")el.querySelectorAll(".plan-ex-btn").forEach(b=>b.onclick=()=>startPlanCounter(p.counters[+b.dataset.i]));
+  else{const chk=document.getElementById("planDoneChk");if(chk)chk.onchange=()=>{state.planDone=state.planDone||{};state.planDone[ds]=chk.checked;save();};}
+}
 /* 운동 종목별 MET(대사당량) — 소모칼로리 자동 추정용 */
 const EXTYPES={러닝:9.8,걷기:3.5,자전거:7.5,등산:6.5,수영:8.0,근력운동:5.0,요가:3.0,필라테스:3.5,홈트레이닝:4.5,줄넘기:11.0,축구:7.0,농구:6.5,배드민턴:5.5,테니스:7.0,기타:5.0};
 const EX_ICON={러닝:"🏃",걷기:"🚶",자전거:"🚴",등산:"🥾",수영:"🏊",근력운동:"🏋️",요가:"🧘",필라테스:"🤸",홈트레이닝:"💪",줄넘기:"🤾",축구:"⚽",농구:"🏀",배드민턴:"🏸",테니스:"🎾",기타:"🏃"};
@@ -715,7 +831,9 @@ const APP_VER=_appVer()||"?";
       const m=html.match(/<!--APPVER:([^>]+?)-->/);
       if(m&&m[1]&&m[1]!==APP_VER){
         const k="upd_"+m[1];
-        if(!sessionStorage.getItem(k)){sessionStorage.setItem(k,"1");location.replace(location.pathname+"?v="+encodeURIComponent(m[1]));}
+        if(!sessionStorage.getItem(k)){sessionStorage.setItem(k,"1");
+          const sp=new URLSearchParams(location.search);sp.set("v",m[1]);
+          location.replace(location.pathname+"?"+sp.toString());}
       }
     }).catch(function(){});
   }catch(e){}
@@ -747,7 +865,7 @@ function idbAll(){return idbOpen().then(db=>new Promise((res)=>{const out={};con
 function genPid(){return "ph_"+Date.now()+"_"+Math.floor(Math.random()*1e6);}
 
 /* ===================== 저장 ===================== */
-function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];
+function normalizeState(){state.meals=state.meals||[];state.workouts=state.workouts||[];state.weights=state.weights||[];state.goals=state.goals||{};state.notified=state.notified||{};state.health=state.health||[];state.planDone=state.planDone||{};
   // AI 루틴 다중 프리셋 (구 aiRoutine 단일 → aiRoutines 마이그레이션)
   if(!state.aiRoutines)state.aiRoutines=[];
   // 구 aiRoutine 단일 루틴 사용자만 이관 (신규는 아래 레벨 프리셋 6종으로 시작)
@@ -860,6 +978,7 @@ function curMealDefault(){const h=new Date().getHours();if(h<11)return"breakfast
 /* ===================== 식단 렌더 ===================== */
 function renderDiet(){
   if(!selDate)selDate=todayStr();
+  renderPlanCard();
   document.getElementById("dietDate").textContent=fmtKDate(selDate)+(selDate===todayStr()?" · 오늘":"");
   const intake=Math.round(dayIntake(selDate)),burn=Math.round(dayBurned(selDate));
   document.getElementById("sumEat").textContent=intake;
