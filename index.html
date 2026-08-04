@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.08.02b-->
+<!--APPVER:2026.08.04a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -3400,9 +3400,16 @@ function init(){
 
   // 알림
   document.getElementById("mNotify").onclick=()=>ensureNotifyPermission().then(renderNotifUI);
-  renderNotifUI();checkReminders();setInterval(checkReminders,30000);
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkReminders();gAutoSync();if(gps.running){gpsAcquireWake();gpsRenderStats();}}});
-  window.addEventListener("focus",()=>{checkReminders();gAutoSync();});
+  renderNotifUI();checkReminders();
+  let _planLastDs=planQueryDate()||todayStr();
+  setInterval(()=>{checkReminders();
+    const ds=planQueryDate()||todayStr(); // 포그라운드 방치(백그라운드 전환 없이 자정 통과)도 대비
+    if(ds!==_planLastDs){_planLastDs=ds;renderPlanCard();}
+  },30000);
+  /* 8/4 사장님 실기 리포트: PWA를 켜둔 채(백그라운드) 날짜가 넘어가도 renderPlanCard()가 재호출된 적이 없어
+     예고(D-day)/완주 카드가 자정을 넘겨도 갱신되지 않고 그대로 남아있던 근본원인 — resume 시 재렌더 고정 */
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkReminders();gAutoSync();renderPlanCard();if(gps.running){gpsAcquireWake();gpsRenderStats();}}});
+  window.addEventListener("focus",()=>{checkReminders();gAutoSync();renderPlanCard();});
 
   // 오버레이: 바깥 탭 닫기 + 뷰어 + 닫기(✕) 버튼 주입
   document.querySelectorAll(".overlay").forEach(o=>o.onclick=e=>{if(e.target===o)closeOverlay(o);});
