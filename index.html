@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.08.04a-->
+<!--APPVER:2026.08.05a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -506,10 +506,12 @@
       <video id="aiVideo" playsinline muted style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
       <canvas id="aiCanvas" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></canvas>
       <button id="aiFlipBtn" style="position:absolute;top:8px;right:8px;z-index:5;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;font-size:20px">🔄</button>
+      <button id="aiDbgBtn" title="인식 디버그 표시" style="position:absolute;top:8px;right:56px;z-index:5;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;font-size:18px">🐞</button>
       <div id="aiCount" style="position:absolute;top:8px;left:0;right:0;text-align:center;font-size:64px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.6)">0</div>
       <div id="aiSub" style="position:absolute;top:82px;left:0;right:0;text-align:center;font-size:22px;font-weight:800;color:#ffe08a;text-shadow:0 2px 6px rgba(0,0,0,.7);display:none"></div>
       <div id="aiHint" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">카메라 준비 중…</div>
       <div id="aiSetSummary" style="display:none;position:absolute;top:96px;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);color:#fff;padding:14px 16px;overflow:auto;font-size:14px"></div>
+      <div id="aiDbg" style="display:none;position:absolute;left:6px;right:6px;bottom:38px;background:rgba(0,0,0,.65);color:#4ade80;font:11px/1.5 monospace;padding:6px 8px;border-radius:8px;white-space:pre-wrap;pointer-events:none"></div>
     </div>
     <div class="gps-stats" style="margin-top:10px">
       <div class="gps-stat"><div class="gv" id="aiReps">0</div><div class="gl">이번 세트</div></div>
@@ -1936,7 +1938,8 @@ const ai={lm:null,stream:null,raf:0,on:false,reps:0,startAt:0,timer:0,
   routine:[],ri:0,setNo:1,target:0,mode:"work",log:{},restT:0,restIv:0,exState:null,
   facing:"user",sm:{},lastRep:0,
   exMode:"reps",timeLeft:0,timeIv:0,holdMs:0,_lastFrame:0, // 진행모드 reps/time/hold (2026-07-15)
-  setLog:[],curSet:{},setUnits:{}}; // 세트당 개수 기록·비교 (2026-07-15)
+  setLog:[],curSet:{},setUnits:{}, // 세트당 개수 기록·비교 (2026-07-15)
+  dbg:false,delegate:"?",errN:0,lastErr:"",_fpsN:0,_fpsT:0,fps:0}; // 인식 디버그(2026-08-05)
 
 /* 각도 스무딩(EMA) — 프레임 흔들림으로 인한 카운트 누락/중복 방지 (7/9 실기기 피드백) */
 function aiSmooth(key,v){
@@ -1964,7 +1967,18 @@ function aiAngle(a,b,c){
   const m=Math.hypot(...v1)*Math.hypot(...v2)||1e-6;
   return Math.acos(Math.min(1,Math.max(-1,dot/m)))*180/Math.PI;
 }
-function aiVis(l,i){return (l[i].visibility??1)>0.5;}
+/* 관절 visibility 판정에 히스테리시스 적용 (2026-08-05): 종전엔 단일 문턱(>0.5)이라 신뢰도가 0.5 부근에서
+   출렁이면 프레임마다 "보임/안보임"이 뒤집혀 각도 계산에 쓰는 관절 조합이 매프레임 바뀌고(예: 양무릎평균↔한쪽무릎만)
+   그 경계에서 각도가 튀어 상태전이(down/up)를 간헐적으로 놓치던 것 — 원인 확정(8/5 사장님 "간헐 카운트" 재현 리포트).
+   신뢰 획득은 까다롭게(>0.55), 신뢰 상실은 관대하게(>0.35) — 한번 보인 관절은 순간 흐려져도 계속 신뢰 유지. */
+const _aiVisTrust={};
+function aiVis(l,i){
+  const v=l[i].visibility??1;
+  const was=_aiVisTrust[i];
+  const trust=was?v>0.35:v>0.55;
+  _aiVisTrust[i]=trust;
+  return trust;
+}
 function aiKnee(l){
   const ps=[[23,25,27],[24,26,28]].filter(p=>p.every(i=>aiVis(l,i)));
   return ps.length?ps.reduce((s,p)=>s+aiAngle(l[p[0]],l[p[1]],l[p[2]]),0)/ps.length:null;
@@ -2109,14 +2123,31 @@ AI_DET["점프 스쿼트"]={mk:()=>({ph:"up",hipBase:null,ankBase:null}),step(s,
       else s.ph="up";
     }
     H("일어나며 점프!");
-  }else{ // air: 점프가 실측돼야 카운트 (문턱 sc*0.012 ≈ 2cm 부양 — 7/13 사장님 지정 감도)
+  }else{ // air: 점프가 실측돼야 카운트 (문턱 sc*0.012 ≈ 2cm 부양 — 7/13 사장님 지정 감도, 이 값은 유지)
     const hipUp=(hip!=null&&s.hipBase!=null&&sc!=null)&&(s.hipBase-hip)>sc*0.012;
     const ankUp=(ank!=null&&s.ankBase!=null&&sc!=null)&&(s.ankBase-ank)>sc*0.012;
     if(hipUp||ankUp){s.ph="up";s.lastMin=s.minA;return "rep";}
-    if(Date.now()-s.aAt>1000){s.ph="up";return H("점프가 없었어요 — 점프해야 카운트!");}
+    /* 8/5 근본수리: 종전엔 1초 안에 부양이 측정 안 되면 스쿼트 사이클 자체(앉았다 일어남)를 완료했는데도
+       카운트를 통째로 버렸음(간헐 미인식의 실제 원인 중 하나 — "그나마 카운트"=측정 성공시에만 셈).
+       부양 측정은 카메라 각도·프레임레이트에 취약하므로, 못 재도 실제 완료된 스쿼트 사이클은 인정(fail-open). */
+    if(Date.now()-s.aAt>1000){s.ph="up";s.lastMin=s.minA;H("점프가 약했지만 인정!");return "rep";}
     H("점프!");
   }}};
-AI_DET["점프 런지"]=AI_DET["런지"];
+/* 점프 런지: 8/5 근본수리 — 종전엔 일반 "런지"(엉덩이 절대높이가 기준선 5% 이내로 복귀해야 카운트)를 그대로 재사용해서
+   사실상 0카운트였음(사장님 실기 확인). 점프 런지는 좌우 다리를 공중에서 교대하며 계속 반쯤 굽힌 자세를 유지하는 게
+   정상 동작이라 "완전히 선 자세로 복귀"가 거의 발생하지 않음 — 절대높이 기준 자체가 이 동작에 안 맞았던 것.
+   스쿼트류처럼 자기정규화되는 무릎각(한쪽만 굽어도 잡히는 aiKneeMin)으로 교체 — 점프스쿼트와 동일한 신뢰도. */
+AI_DET["점프 런지"]={mk:()=>({ph:"up"}),step(s,l,H){
+  const k=aiSmooth("kneeJL",aiKneeMin(l));if(k==null)return H("하체가 안 보여요 — 뒤로 물러나세요");
+  if(s.ph==="up"){
+    if(k<120){s.ph="down";s.dAt=Date.now();s.minA=k;}
+    H(`무릎 ${Math.round(k)}° — 앞다리 깊이 앉았다가 점프해서 교대!`);
+  }else{
+    s.minA=Math.min(s.minA,k);
+    if(k>150&&Date.now()-s.dAt>200){s.ph="up";s.lastMin=s.minA;return "rep";}
+    H("점프해서 다리 바꾸세요!");
+  }
+}};
 /* 양쪽 교대형: 왼쪽+오른쪽 각 1번씩 완성돼야 1회 (사장님 지정 규칙, 7/10) */
 function aiAltDet(opts){
   return {fast:true, // 빠른 교대 동작: 좌표 스무딩 미적용 + 짧은 디바운스 (7/10)
@@ -2408,7 +2439,8 @@ function aiRenderSetSummary(){ // 세트가 끝날 때마다 세트별 개수 �
 async function aiBegin(cfg){ // cfg={items:[{ex,reps,mode}], sets, rest} — 한 세트=동작 시퀀스 전체(서킷)
   ai.items=cfg.items;ai.sets=cfg.sets||1;ai.restLen=cfg.rest||15;
   ai.ii=0;ai.setNo=1;ai.reps=0;ai.mode="work";ai.log={};ai.sm={};ai.lastRep=0;ai.lmPrev=null;
-  ai.setLog=[];ai.curSet={};ai.setUnits={};
+  ai.setLog=[];ai.curSet={};ai.setUnits={};ai.errN=0;ai.lastErr="";ai._fpsN=0;ai._fpsT=0;ai.fps=0;
+  for(const k in _aiVisTrust)delete _aiVisTrust[k]; // 새 세션: 이전 관절 신뢰상태 이월 방지
   aiWakeAcq();gaEv("ai_session_start",{routine:(cfg.items||[]).map(i=>i.ex).join(",")});
   ai.exState=aiDet(ai.items[0].ex).mk(); // 임시(카메라 로드 후 aiEnterItem이 재설정)
   document.getElementById("aiSetup").style.display="none";
@@ -2422,9 +2454,13 @@ async function aiBegin(cfg){ // cfg={items:[{ex,reps,mode}], sets, rest} — 한
     if(!ai.lm){
       const v=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
       const fs=await v.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-      ai.lm=await v.PoseLandmarker.createFromOptions(fs,{
-        baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"GPU"},
-        runningMode:"VIDEO",numPoses:1});
+      /* 8/5: minTrackingConfidence 등 미지정이면 SDK 기본(0.5)이라, 빠른 동작(점프류) 중 모션블러로 트래킹이
+         끊겨 그 프레임이 통째로 유실(사람 자체가 안 잡힘)되는 경우가 있었음 — 명시적으로 완화해 유실 프레임 축소.
+         GPU delegate 실패 시(구형 기기·드라이버) 완전 실패 대신 CPU로 폴백 — 종전엔 폴백 없이 시작 자체가 죽었음. */
+      const lmOpt={baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"GPU"},
+        runningMode:"VIDEO",numPoses:1,minPoseDetectionConfidence:0.3,minPosePresenceConfidence:0.3,minTrackingConfidence:0.3};
+      try{ai.lm=await v.PoseLandmarker.createFromOptions(fs,lmOpt);ai.delegate="GPU";}
+      catch(e){ai.lm=await v.PoseLandmarker.createFromOptions(fs,{...lmOpt,baseOptions:{...lmOpt.baseOptions,delegate:"CPU"}});ai.delegate="CPU";}
       ai.draw=v.DrawingUtils;ai.conns=v.PoseLandmarker.POSE_CONNECTIONS;
     }
     hint.textContent="카메라 켜는 중…";
@@ -2493,12 +2529,30 @@ function aiNextStep(){
     }
   },1000);
 }
+/* 운동별 판정 임계 표시 (디버그 오버레이용, 2026-08-05) — 사장님이 실측 각도와 임계를 나란히 볼 수 있게 */
+const AI_DBG_THRESH={
+  "스쿼트":"무릎 down<120° up>150°","점프 스쿼트":"무릎 down<120° up>150°(+점프 없어도 인정)",
+  "런지":"엉덩이 down>base+10% up<base+5%","점프 런지":"무릎(짧은쪽) down<120° up>150°",
+  "팔굽혀펴기":"팔꿈치 down<100° up>140°","사이드 런지":"무릎(짧은쪽) down<125° up>155°",
+  "버피":"플랭크 6프레임 유지→기립 6프레임+800ms",
+};
+function aiDbgLine(lms,cur){
+  const k=aiKnee(lms),km=aiKneeMin(lms);
+  const visStr=[23,24,25,26,27,28].map(i=>(lms[i]&&(lms[i].visibility??1)>=0?((lms[i].visibility??1).toFixed(2)):"-")).join("/");
+  return `${cur.ex} · 임계: ${AI_DBG_THRESH[cur.ex]||"-"}\n`+
+    `phase=${ai.exState&&ai.exState.ph} minA=${ai.exState&&ai.exState.minA!=null?Math.round(ai.exState.minA):"-"} lastMin=${ai.exState&&ai.exState.lastMin!=null?Math.round(ai.exState.lastMin):"-"}\n`+
+    `무릎(양평균)=${k!=null?Math.round(k)+"°":"-"} 무릎(짧은쪽)=${km!=null?Math.round(km)+"°":"-"}\n`+
+    `visibility(hipL/R,kneeL/R,ankL/R)=${visStr}\n`+
+    `FPS=${ai.fps} 모델=${ai.delegate} 프레임오류=${ai.errN}${ai.lastErr?" ("+ai.lastErr+")":""}`;
+}
 function aiLoop(){
   if(!ai.on)return;
   const vid=document.getElementById("aiVideo"),cv=document.getElementById("aiCanvas");
+  const t0=performance.now();
+  try{
   if(vid.videoWidth&&ai.mode==="work"){
     if(cv.width!==vid.videoWidth){cv.width=vid.videoWidth;cv.height=vid.videoHeight;}
-    const res=ai.lm.detectForVideo(vid,performance.now());
+    const res=ai.lm.detectForVideo(vid,t0);
     const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
     const raw=res.landmarks&&res.landmarks[0];
     if(raw){
@@ -2517,10 +2571,22 @@ function aiLoop(){
         // 빠른 교대형은 원좌표(지연 0), 나머지는 스무딩 좌표
         if(det.step(ai.exState,det.fast?raw:lms,H)==="rep")aiRepDone();
       }
+      if(ai.dbg){const d=document.getElementById("aiDbg");if(d)d.textContent=aiDbgLine(lms,cur);}
     }else{
       ai.lmPrev=null;ai._lastFrame=0;
       document.getElementById("aiHint").textContent="사람이 안 보여요 — 화면 안에 서주세요";
+      if(ai.dbg){const d=document.getElementById("aiDbg");if(d)d.textContent=`랜드마크 없음(포즈 미검출) — 모델=${ai.delegate} FPS=${ai.fps} 프레임오류=${ai.errN}`;}
     }
+    ai._fpsN++;if(t0-ai._fpsT>=1000){ai.fps=ai._fpsN;ai._fpsN=0;ai._fpsT=t0;}
+  }
+  }catch(e){
+    /* 8/5 근본수리: 종전엔 이 블록에 try/catch가 전혀 없어서 detectForVideo·상태전이 어디서든 예외가 한 번만
+       나면(예: 드문 GL 컨텍스트 오류) requestAnimationFrame(아래)까지 못 가고 루프가 그 프레임에서 영구 정지 —
+       카메라 영상은 계속 보이는데(비디오 엘리먼트는 JS 루프와 무관) 카운터만 조용히 죽는 증상이 될 수 있었음.
+       이제 에러를 삼키고 다음 프레임에 재시도 + 디버그 오버레이에 노출(콘솔에도 로그). */
+    ai.errN++;ai.lastErr=String((e&&e.message)||e).slice(0,60);
+    console.error("[aiLoop]",e);
+    if(ai.dbg){const d=document.getElementById("aiDbg");if(d)d.textContent=`⚠️ 프레임 오류: ${ai.lastErr}\n누적 오류=${ai.errN} 모델=${ai.delegate}`;}
   }
   ai.raf=requestAnimationFrame(aiLoop);
 }
@@ -3328,6 +3394,7 @@ function init(){
   document.getElementById("aiFreeMode").onclick=()=>aiBegin({items:[{ex:"스쿼트",reps:9999}],sets:1,rest:15});
   document.getElementById("aiSetsN").onchange=e=>{aiCurRoutine().sets=Math.min(9,Math.max(1,+e.target.value||2));save();};
   document.getElementById("aiFlipBtn").onclick=aiFlipCam;
+  document.getElementById("aiDbgBtn").onclick=()=>{ai.dbg=!ai.dbg;document.getElementById("aiDbg").style.display=ai.dbg?"":"none";};
   document.getElementById("bodyCheckBtn").onclick=bcOpen;
   document.getElementById("bcStartBtn").onclick=bcStart;
   document.getElementById("bcCloseBtn").onclick=bcClose;
