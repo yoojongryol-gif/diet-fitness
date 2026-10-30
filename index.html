@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.08.05a-->
+<!--APPVER:2026.10.30a-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -169,6 +169,17 @@
   .menu-item .mi{font-size:20px}
   .toast{position:fixed;bottom:calc(90px + var(--safe-bot));left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--line);color:var(--text);padding:11px 18px;border-radius:30px;font-size:13px;z-index:200;opacity:0;transition:.3s;pointer-events:none;max-width:90%;text-align:center}
   .toast.show{opacity:1}
+  /* 실패 패널 (2026-10-30) — 쓰기 실패는 이 패널 하나로만 알림 */
+  .fail-panel{position:fixed;inset:0;z-index:450;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+  .fail-panel[hidden]{display:none}
+  .fail-box{background:var(--surface);color:var(--text);width:100%;max-width:360px;border-radius:16px;border-top:4px solid var(--red);padding:18px 18px 14px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  .fail-title{font-size:16px;font-weight:800;margin:6px 0 8px}
+  .fail-why{font-size:13px;line-height:1.55;color:var(--red);word-break:keep-all}
+  .fail-hint{font-size:12.5px;line-height:1.6;color:var(--muted);margin-top:8px;word-break:keep-all}
+  .fail-btns{display:flex;gap:8px;margin-top:16px}
+  .fail-btns button{flex:1;padding:12px;border-radius:12px;font-size:14px;font-weight:700;border:1px solid var(--line);background:var(--surface2);color:var(--text);cursor:pointer}
+  .fail-btns .fail-pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fail-btns button:disabled{opacity:.6}
 
   /* bottom tab bar */
   .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;justify-content:center;gap:4px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:0 6px;padding-bottom:var(--safe-bot)}
@@ -669,6 +680,8 @@
     <div class="menu-item" id="mImport"><span class="mi">⬆️</span>파일에서 가져오기</div>
     <div class="menu-item" id="mReset" style="color:var(--red)"><span class="mi">🗑️</span>전체 초기화</div>
     <div class="menu-item" id="mErrLog"><span class="mi">🐞</span>오류 로그 복사 (문제 신고용)</div>
+    <div class="menu-item" id="mFault"><span class="mi">🧪</span><span id="mFaultLbl">저장 실패 테스트(FAULT): 꺼짐</span></div>
+    <p style="color:var(--muted);font-size:12px;margin:2px 2px 0;line-height:1.6">켜면 다음 저장 1번만 일부러 실패시켜 실패 안내가 제대로 뜨는지 확인해요. 1번 실패 후 자동으로 꺼져요.</p>
     <input type="file" id="importFile" accept="application/json" style="display:none">
     <p style="color:var(--muted);font-size:12px;margin-top:18px;line-height:1.6">
       💡 데이터는 이 기기 + 구글 드라이브에 백업됩니다.<br>
@@ -688,6 +701,15 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="fail-panel" id="failPanel" role="alertdialog" aria-modal="true" aria-labelledby="failTitle" hidden>
+  <div class="fail-box">
+    <div style="font-size:26px">⚠️</div>
+    <div class="fail-title" id="failTitle"></div>
+    <div class="fail-why" id="failWhy"></div>
+    <div class="fail-hint" id="failHint"></div>
+    <div class="fail-btns"><button type="button" id="failClose">닫기</button><button type="button" class="fail-pri" id="failRetry">다시 시도</button></div>
+  </div>
+</div>
 
 <script>
 /* ===================== 상수 / 상태 ===================== */
@@ -867,6 +889,9 @@ let editMealId=null,curMeal="breakfast",curMealPhoto=null;
 let editWorkoutId=null,curExType="러닝",timerInt=null,timerSec=0;
 let curWorkoutPhoto=null,curWorkoutVideo=null,_vidURL=null;
 
+/* 2026-10-30: JS 템플릿 안의 <img src="${..}"> 문자열을 브라우저 프리로드 스캐너가 실제 URL로 오인해
+   라이브 로드 때마다 404 5건 발생 → 템플릿엔 data-src만 쓰고 innerHTML 직후 여기서 src를 채운다 */
+function fillImgs(root){if(root)root.querySelectorAll("img[data-src]").forEach(im=>{im.src=im.dataset.src;im.removeAttribute("data-src");});}
 function uid(){return Date.now()+""+Math.floor(Math.random()*999);}
 
 /* ===================== IndexedDB (사진 — localStorage 용량 회피) ===================== */
@@ -914,8 +939,92 @@ function normalizeState(){state.meals=state.meals||[];state.workouts=state.worko
     r.items=(r.items&&r.items.length?r.items:[{ex:"스쿼트",reps:10}]).map(it=>({ex:it.ex,reps:it.reps||10,mode:it.mode==="time"?"time":"reps"}));}); // mode 보존(2026-07-15)
   if(typeof state.aiRoutineSel!=="number"||state.aiRoutineSel>=state.aiRoutines.length)state.aiRoutineSel=0;
   state.customEx=state.customEx||[];state.bodyChecks=state.bodyChecks||[];}
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d)state=d;}catch(e){}normalizeState();}
-function save(){state._savedAt=Date.now();localStorage.setItem(KEY,JSON.stringify(state));if(typeof scheduleBackup==="function")scheduleBackup();}
+/* ===================== 실패 패널 + FAULT 스위치 (2026-10-30 품질수리 2호) =====================
+   원칙: 쓰기 실패는 "무엇이·왜" + 다시 시도 버튼을 가진 패널 하나로만 알린다(패널이 떠 있는 동안 토스트 금지).
+   FAULT: 설정 → '저장 실패 테스트' 켜면 다음 save() 1회만 고의 실패, 실패 직후 자동 off. */
+let _fail=null;
+const FAULTKEY="dietFitness.fault";
+function faultOn(){try{return localStorage.getItem(FAULTKEY)==="1";}catch(e){return false;}}
+function renderFaultUI(){const l=document.getElementById("mFaultLbl");if(l)l.textContent="저장 실패 테스트(FAULT): "+(faultOn()?"켜짐 — 다음 저장 1번 실패":"꺼짐");}
+function failReason(e){
+  if(e&&e.isFault)return "FAULT 스위치로 일부러 낸 실패예요(테스트). 스위치는 자동으로 꺼졌어요.";
+  const n=(e&&e.name)||"",m=String((e&&e.message)||e||"");
+  if(n==="QuotaExceededError"||/quota/i.test(m))return "기기 저장 공간(브라우저 저장소)이 가득 찼어요.";
+  if(n==="SecurityError"||/denied|security|access/i.test(m))return "브라우저가 저장을 막고 있어요(시크릿 모드·사이트 데이터 차단 설정).";
+  if(/Failed to fetch|NetworkError|network/i.test(m))return "인터넷 연결이 끊겼거나 서버에 닿지 못했어요.";
+  return "예상하지 못한 오류 — "+(m.slice(0,120)||n||"원인 미상");
+}
+function showFail(o){
+  _fail=o;
+  const t=document.getElementById("toast");if(t){t.classList.remove("show");clearTimeout(toastT);}
+  document.getElementById("failTitle").textContent=o.what;
+  document.getElementById("failWhy").textContent="원인: "+o.why;
+  document.getElementById("failHint").textContent=o.hint||"";
+  const r=document.getElementById("failRetry");r.style.display=o.retry?"":"none";r.disabled=false;r.textContent="다시 시도";
+  document.getElementById("failClose").textContent=o.retry?"닫기":"확인";
+  document.getElementById("failPanel").hidden=false;
+  logErr("FAIL "+o.what+" | "+o.why);
+}
+function hideFail(){document.getElementById("failPanel").hidden=true;const f=_fail;_fail=null;return f;}
+document.getElementById("failClose").onclick=()=>{const f=hideFail();if(f&&f.onClose)f.onClose();};
+document.getElementById("failRetry").onclick=async()=>{
+  const b=document.getElementById("failRetry");if(!_fail||!_fail.retry)return;
+  b.disabled=true;b.textContent="다시 시도 중…";
+  const f=hideFail();await f.retry(); // retry가 다시 실패하면 스스로 패널을 다시 띄운다
+};
+document.getElementById("mFault").onclick=()=>{try{if(faultOn())localStorage.removeItem(FAULTKEY);else localStorage.setItem(FAULTKEY,"1");}catch(e){}renderFaultUI();toast(faultOn()?"다음 저장 1번은 일부러 실패해요":"FAULT 테스트를 껐어요");};
+renderFaultUI();
+
+let _lastGood=null,_loadFail=null; // _lastGood: 기기에 마지막으로 저장(또는 로드) 성공한 state JSON — 실패 시 되돌리기 기준
+function load(){
+  let raw=null;
+  try{raw=localStorage.getItem(KEY);}
+  catch(e){_loadFail={what:"저장된 기록을 불러오지 못했어요",why:failReason(e),hint:"이 상태에선 새 기록도 저장되지 않을 수 있어요. 브라우저 설정에서 이 사이트의 데이터 저장을 허용해 주세요."};}
+  if(raw){
+    try{const d=JSON.parse(raw);if(d&&typeof d==="object"){state=d;_lastGood=raw;}}
+    catch(e){
+      const bk=KEY+".corrupt."+Date.now();let kept=false;try{localStorage.setItem(bk,raw);kept=true;}catch(e2){}
+      _loadFail={what:"저장된 기록이 손상돼 읽지 못했어요",why:"저장 데이터 형식 오류 ("+String(e.message||e).slice(0,60)+")",
+        hint:(kept?"손상된 원본은 기기에 '"+bk+"' 이름으로 따로 보관했어요. ":"원본을 따로 보관할 공간이 없었어요. ")+"구글 백업이 있으면 설정 → '구글에서 복원'으로 되살릴 수 있어요."};
+    }
+  }
+  normalizeState();
+  if(_loadFail)showFail(_loadFail);
+}
+function _writeState(){
+  state._savedAt=Date.now();
+  const json=JSON.stringify(state);
+  if(faultOn()){try{localStorage.removeItem(FAULTKEY);}catch(e){}renderFaultUI();const fe=new Error("FAULT 고의 실패");fe.isFault=true;throw fe;}
+  localStorage.setItem(KEY,json);_lastGood=json;
+}
+const _RETRY_SHEETS=["mealSheet","healthSheet","workoutSheet","weightSheet","goalSheet","gpsSheet","menuSheet"];
+function _saveFailPanel(e){
+  showFail({what:"기록을 기기에 저장하지 못했어요",why:failReason(e),
+    hint:"방금 입력한 내용은 아직 화면에 남아 있어요. '다시 시도'를 누르면 다시 저장하고, '닫기'를 누르면 저장 안 된 변경은 취소돼요(입력창은 그대로라 다시 저장할 수 있어요).",
+    retry:()=>{
+      try{_writeState();}catch(e2){_saveFailPanel(e2);return;}
+      const top=_RETRY_SHEETS.map(id=>document.getElementById(id)).filter(el=>el&&el.classList.contains("open")).pop();
+      if(top){if(top.id==="workoutSheet"&&typeof stopTimer==="function")stopTimer();closeOverlay(top);}
+      renderAll();if(typeof scheduleBackup==="function")scheduleBackup();toast("저장했어요");
+    },
+    onClose:()=>{ // 기기 저장본 기준으로 되돌림 → 화면=기기 일치, 재저장 시 중복 기록 방지
+      try{state=_lastGood?JSON.parse(_lastGood):{meals:[],workouts:[],weights:[],goals:{},notified:{},health:[]};}catch(e3){logErr("rollback: "+e3);}
+      normalizeState();renderAll();
+    }});
+}
+function save(){
+  try{_writeState();}
+  catch(e){
+    _saveFailPanel(e);
+    const se=new Error("저장 실패(패널 안내됨): "+((e&&e.message)||e));se.isSaveErr=true;
+    throw se; // 호출부의 뒤이은 "창 닫기·저장했어요 토스트"를 막는다(성공 오보 방지)
+  }
+  if(typeof scheduleBackup==="function")scheduleBackup();
+}
+/* 백그라운드 저장(알림 기록·세션 로그 등): 실패해도 흐름은 계속 — 안내는 save()가 이미 패널로 띄움 */
+function saveQuiet(){try{save();return true;}catch(e){return false;}}
+window.addEventListener("error",e=>{if(e.error&&e.error.isSaveErr)e.preventDefault();});
+window.addEventListener("unhandledrejection",e=>{if(e.reason&&e.reason.isSaveErr)e.preventDefault();});
 
 /* ===================== overlay open/close + 모바일 뒤로가기 ===================== */
 let _popSuppress=false;
@@ -946,7 +1055,7 @@ function todayStr(){return ymd(new Date());}
 function fmtKDate(s){const d=parseYmd(s);const w=["일","월","화","수","목","금","토"][d.getDay()];return `${d.getMonth()+1}월 ${d.getDate()}일 (${w})`;}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function num(id){const v=parseFloat(document.getElementById(id).value);return isFinite(v)?v:0;}
-let toastT;function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2000);}
+let toastT;function toast(msg){if(_fail)return;/* 실패 패널이 떠 있으면 토스트 금지(겹침 방지) */const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2000);}
 
 /* ===================== 사진 ===================== */
 function resizeImage(file,max,q){
@@ -1177,7 +1286,7 @@ function setMealPick(){
 function renderMealPhoto(){
   const g=document.getElementById("mealPhotoGrid");
   if(curMealPhoto){
-    g.innerHTML=`<div class="photo-thumb"><img src="${curMealPhoto.data}"><button class="rm" id="mealPhotoRm">✕</button></div>`;
+    g.innerHTML=`<div class="photo-thumb"><img data-src="${curMealPhoto.data}"><button class="rm" id="mealPhotoRm">✕</button></div>`;fillImgs(g);
     g.querySelector("#mealPhotoRm").onclick=()=>{curMealPhoto=null;renderMealPhoto();};
     g.querySelector("img").onclick=()=>openViewer(curMealPhoto.data);
   }else{
@@ -1329,7 +1438,7 @@ function setHealthTypePick(){
 function renderHealthPhoto(){
   const g=document.getElementById("hPhotoGrid");
   if(curHealthPhoto){
-    g.innerHTML=`<div class="photo-thumb"><img src="${curHealthPhoto.data}"><button class="rm" id="hPhotoRm">✕</button></div>`;
+    g.innerHTML=`<div class="photo-thumb"><img data-src="${curHealthPhoto.data}"><button class="rm" id="hPhotoRm">✕</button></div>`;fillImgs(g);
     g.querySelector("#hPhotoRm").onclick=()=>{curHealthPhoto=null;renderHealthPhoto();};
     g.querySelector("img").onclick=()=>openViewer(curHealthPhoto.data);
   }else{
@@ -1479,11 +1588,11 @@ function autoKcal(){const min=num("wMin");if(!min)return;document.getElementById
 function renderWorkoutMedia(){
   const g=document.getElementById("workoutMediaGrid");if(!g)return;
   let html="";
-  if(curWorkoutPhoto)html+=`<div class="photo-thumb" data-photothumb><img src="${curWorkoutPhoto.data}"><button class="rm" data-rm="photo">✕</button></div>`;
+  if(curWorkoutPhoto)html+=`<div class="photo-thumb" data-photothumb><img data-src="${curWorkoutPhoto.data}"><button class="rm" data-rm="photo">✕</button></div>`;
   if(curWorkoutVideo)html+=`<div class="photo-thumb" data-vidthumb style="background:#000;display:flex;align-items:center;justify-content:center"><span style="font-size:28px">🎬</span><button class="rm" data-rm="video">✕</button></div>`;
   if(!curWorkoutPhoto)html+=`<div class="add-photo" data-add="cam">📷<small>촬영</small></div><div class="add-photo" data-add="gal">🖼<small>사진</small></div>`;
   if(!curWorkoutVideo)html+=`<div class="add-photo" data-add="vid">🎬<small>동영상</small></div>`;
-  g.innerHTML=html;
+  g.innerHTML=html;fillImgs(g);
   g.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{const t=b.dataset.add;document.getElementById(t==="cam"?"woCamInput":t==="gal"?"woPhotoInput":"woVideoInput").click();});
   g.querySelectorAll("[data-rm]").forEach(b=>b.onclick=e=>{e.stopPropagation();if(b.dataset.rm==="photo")curWorkoutPhoto=null;else curWorkoutVideo=null;renderWorkoutMedia();});
   const pt=g.querySelector("[data-photothumb] img");if(pt)pt.onclick=()=>openViewer(curWorkoutPhoto.data);
@@ -1647,7 +1756,7 @@ function checkReminders(){
     if(diff>=0&&diff<15&&!state.notified[key]){fireReminder(labels[k]||"기록할 시간이에요");state.notified[key]=Date.now();changed=true;}
   }
   for(const key in state.notified){if(Date.now()-state.notified[key]>3*86400000)delete state.notified[key];}
-  if(changed)save();
+  if(changed)saveQuiet();
 }
 
 /* ===================== 설정: Gemini / 데이터 ===================== */
@@ -1663,10 +1772,10 @@ function saveGemini(){
   toast(k?"AI 키를 저장했어요"+(gIsConnected()?" · 구글 동기화됨":""):"AI 키를 비웠어요");
 }
 async function exportData(){
-  let photos={};try{photos=await idbAll();}catch(e){}
+  let photos={},photoErr=false;try{photos=await idbAll();}catch(e){photoErr=true;logErr("export idbAll: "+e);}
   const blob=new Blob([JSON.stringify({state,photos},null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="diet-fitness-backup-"+todayStr()+".json";a.click();toast("백업 파일을 저장했어요");
+  a.download="diet-fitness-backup-"+todayStr()+".json";a.click();toast(photoErr?"백업 파일 저장 (사진은 읽지 못해 제외됨)":"백업 파일을 저장했어요");
 }
 function importData(file){
   const r=new FileReader();
@@ -1674,9 +1783,9 @@ function importData(file){
     try{
       const parsed=JSON.parse(e.target.result);
       const st=parsed.state||parsed,photos=parsed.photos||{};
-      for(const id in photos){try{await idbPut(id,photos[id]);}catch(e2){}}
-      state=st;normalizeState();save();renderAll();toast("복원 완료!");closeMenu();
-    }catch(err){toast("파일을 읽을 수 없어요");}
+      let pf=0;for(const id in photos){try{await idbPut(id,photos[id]);}catch(e2){pf++;logErr("import idbPut: "+e2);}}
+      state=st;normalizeState();save();renderAll();toast("복원 완료!"+(pf?` (사진 ${pf}장 저장 실패)`:""));closeMenu();
+    }catch(err){if(err&&err.isSaveErr)return;toast("파일을 읽을 수 없어요");}
   };
   r.readAsText(file);
 }
@@ -1726,35 +1835,43 @@ async function gDriveFindBackup(){
   const d=await r.json();
   return {id:(d.files&&d.files[0]&&d.files[0].id)||null};
 }
+/* 백업 실패 알림: 사용자가 누른 백업=실패 패널(다시 시도), 자동 백업=상단 ☁️ 아이콘을 ⚠️로(누르면 수동 백업→원인 패널) */
+function backupFail(silent,why,hint){
+  gBackingUp=false;logErr("backup fail: "+why);
+  if(silent){updateSyncUI("err");const b=document.getElementById("syncBtn");if(b)b.title="자동 백업 실패 — 눌러서 다시 백업: "+why;return false;}
+  showFail({what:"구글 드라이브 백업에 실패했어요",why,hint:hint||"기기에 저장된 기록은 안전해요. 연결 상태를 확인하고 다시 시도해 주세요.",retry:()=>gDriveBackup(false)});
+  return false;
+}
 async function gDriveBackup(silent){
   if(!gIsConnected()||gBackingUp)return false;
-  if(!navigator.onLine)return false;
+  if(!navigator.onLine){if(!silent)return backupFail(false,"인터넷에 연결돼 있지 않아요.");updateSyncUI("offline");return false;}
   gBackingUp=true;
   try{
     const found=await gDriveFindBackup();
-    if(found.err===403){if(!silent)toast("백업 권한이 없어요 — 설정에서 '구글 재연결'을 해주세요");gBackingUp=false;return false;}
+    if(found.err===403)return backupFail(silent,"구글 드라이브 백업 권한이 없어요.","설정 → '백업 권한 추가(구글 재연결)'을 누른 뒤 다시 시도해 주세요.");
+    if(found.err)return backupFail(silent,"백업 위치 조회 실패 (구글 응답 "+found.err+")");
     let gkey=localStorage.getItem("gemini.key")||"",gmodel=geminiModel();
     // 로컬에 키가 없으면 기존 클라우드 백업의 키를 보존(빈값으로 덮어쓰기 방지)+로컬에도 복원
-    if(!gkey&&found.id){try{const er=await gFetch("https://www.googleapis.com/drive/v3/files/"+found.id+"?alt=media");if(er.ok){const ed=await er.json();if(ed.gkey){gkey=ed.gkey;localStorage.setItem("gemini.key",ed.gkey);if(typeof renderGeminiUI==="function")renderGeminiUI();}if(ed.gmodel){gmodel=ed.gmodel;localStorage.setItem("gemini.model",ed.gmodel);}}}catch(e){}}
-    let photos={};try{photos=await idbAll();}catch(e){}
+    if(!gkey&&found.id){try{const er=await gFetch("https://www.googleapis.com/drive/v3/files/"+found.id+"?alt=media");if(er.ok){const ed=await er.json();if(ed.gkey){gkey=ed.gkey;localStorage.setItem("gemini.key",ed.gkey);if(typeof renderGeminiUI==="function")renderGeminiUI();}if(ed.gmodel){gmodel=ed.gmodel;localStorage.setItem("gemini.model",ed.gmodel);}}}catch(e){logErr("backup gkey read: "+e);}}
+    let photos={},photoErr=false;try{photos=await idbAll();}catch(e){photoErr=true;logErr("backup idbAll: "+e);}
     let size=0;for(const k in photos)size+=(photos[k]||"").length;
-    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000,gkey:gkey,gmodel:gmodel};
+    const payload={v:1,savedAt:Date.now(),state,photos:size>9000000?{}:photos,photosOmitted:size>9000000||photoErr,gkey:gkey,gmodel:gmodel};
     const content=JSON.stringify(payload);
     let fileId=found.id;
     if(!fileId){
       const cr=await gFetch("https://www.googleapis.com/drive/v3/files",{method:"POST",body:JSON.stringify({name:BACKUP_NAME,parents:["appDataFolder"]})});
-      if(!cr.ok){if(!silent)toast("백업 파일 생성 실패");gBackingUp=false;return false;}
+      if(!cr.ok)return backupFail(silent,"백업 파일 생성 실패 (구글 응답 "+cr.status+")");
       fileId=(await cr.json()).id;
     }
     const up=await gFetch("https://www.googleapis.com/upload/drive/v3/files/"+fileId+"?uploadType=media",{method:"PATCH",body:content});
     if(up.ok){
-      localStorage.setItem("g.backupAt",String(Date.now()));renderGoogleUI();
+      localStorage.setItem("g.backupAt",String(Date.now()));renderGoogleUI();updateSyncUI("ok");
+      const sb=document.getElementById("syncBtn");if(sb)sb.title="구글 백업";
       if(!silent)toast("☁️ 구글에 백업 완료"+(payload.photosOmitted?" (사진 제외·용량 초과)":""));
       gBackingUp=false;return true;
     }
-    if(!silent)toast("백업 업로드 실패");
-  }catch(e){if(!silent)toast("백업 실패 — 잠시 후 다시");}
-  gBackingUp=false;return false;
+    return backupFail(silent,"백업 업로드 실패 (구글 응답 "+up.status+")");
+  }catch(e){return backupFail(silent,failReason(e));}
 }
 async function gDriveRestore(){
   if(!gIsConnected()){toast("먼저 구글 계정을 연결하세요");return;}
@@ -1769,14 +1886,14 @@ async function gDriveRestore(){
     const mc=(st.meals||[]).length,wc=(st.workouts||[]).length,gc=(st.weights||[]).length;
     if(!confirm(`구글 백업을 불러옵니다.\n식단 ${mc} · 운동 ${wc} · 체중 ${gc}건\n\n지금 이 기기의 내용은 백업 내용으로 덮어써집니다. 진행할까요?`))return;
     const photos=data.photos||{};
-    for(const id in photos){try{await idbPut(id,photos[id]);}catch(e){}}
+    let pf=0;for(const id in photos){try{await idbPut(id,photos[id]);}catch(e){pf++;logErr("restore idbPut: "+e);}}
     state=st;normalizeState();
     // AI 키도 같은 구글 계정 기기로 자동 동기화(사장님 개인 드라이브에만 저장)
     if(data.gkey)localStorage.setItem("gemini.key",data.gkey);
     if(data.gmodel)localStorage.setItem("gemini.model",data.gmodel);
     save();renderAll();renderGeminiUI();
-    toast("✅ 구글 백업에서 복원했어요"+(data.gkey?" (AI 키 포함)":""));closeMenu();
-  }catch(e){toast("복원 중 오류가 났어요");}
+    toast("✅ 구글 백업에서 복원했어요"+(data.gkey?" (AI 키 포함)":"")+(pf?` · 사진 ${pf}장 저장 실패`:""));closeMenu();
+  }catch(e){if(e&&e.isSaveErr)return;showFail({what:"구글 백업에서 복원하지 못했어요",why:failReason(e),hint:"이 기기의 기존 기록은 바뀌지 않았어요.",retry:gDriveRestore});}
 }
 async function gConnect(){
   let id=cleanCid(document.getElementById("gClientId").value);
@@ -2606,11 +2723,11 @@ function aiSave(){
     toast(`저장 완료 · ${parts.join(", ")} · ${min}분`);
     gaEv("ai_session_save",{detail:parts.join(","),minutes:min});
   }else{toast("카운트가 없어 저장하지 않았어요");}
-  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];save();}
+  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];saveQuiet();}
   aiStop();closeOverlay("aiSheet");
 }
 function aiClose(){
-  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];save();}
+  if(ai.repLog&&ai.repLog.length){state._aiLastSession=ai.repLog.slice(-100);ai.repLog=[];saveQuiet();}
   aiStop();closeOverlay("aiSheet");}
 
 /* ===================== 체형 밸런스 체크 (2단계) ===================== */
@@ -2920,11 +3037,12 @@ function bcFinish(){
   document.getElementById("bcReport").style.display="";
   const imgs=(bc.res.frontImg||bc.res.sideImg)?
     `<div style="display:flex;gap:8px;margin-top:8px">`+
-    (bc.res.frontImg?`<div style="flex:1"><img src="${bc.res.frontImg}" style="width:100%;border-radius:10px"><div style="font-size:11px;text-align:center;color:var(--sub,#888)">정면 · 신뢰도 ${f._q??"-"}%</div></div>`:"")+
-    (bc.res.sideImg?`<div style="flex:1"><img src="${bc.res.sideImg}" style="width:100%;border-radius:10px"><div style="font-size:11px;text-align:center;color:var(--sub,#888)">측면 · 신뢰도 ${s._q??"-"}%</div></div>`:"")+
+    (bc.res.frontImg?`<div style="flex:1"><img data-src="${bc.res.frontImg}" style="width:100%;border-radius:10px"><div style="font-size:11px;text-align:center;color:var(--sub,#888)">정면 · 신뢰도 ${f._q??"-"}%</div></div>`:"")+
+    (bc.res.sideImg?`<div style="flex:1"><img data-src="${bc.res.sideImg}" style="width:100%;border-radius:10px"><div style="font-size:11px;text-align:center;color:var(--sub,#888)">측면 · 신뢰도 ${s._q??"-"}%</div></div>`:"")+
     `</div><div style="font-size:11px;color:var(--sub,#888);margin-top:4px">파란 점선=수직 기준 · 주황=어깨선 · 빨강=골반선 (사진은 저장되지 않아요)</div>`:"";
   document.getElementById("bcReport").innerHTML=
     `<div style="font-weight:700;margin-top:4px">측정 결과 (${todayStr()})</div>`+imgs+html+recHtml;
+  fillImgs(document.getElementById("bcReport"));
   state.bodyChecks.push({date:todayStr(),front:f,side:s,at:Date.now()});
   save();
   const fb=document.getElementById("bfStartBtn");if(fb)fb.onclick=()=>bfStart(bc.lastIssues);
@@ -3200,18 +3318,18 @@ async function gAutoSync(){
         const before=JSON.stringify([state.meals.length,state.workouts.length,state.weights.length]);
         // 원격 사진을 로컬에 없으면 보강
         const photos=data.photos||{};
-        for(const id in photos){try{const ex=await idbGet(id);if(!ex)await idbPut(id,photos[id]);}catch(e){}}
+        for(const id in photos){try{const ex=await idbGet(id);if(!ex)await idbPut(id,photos[id]);}catch(e){logErr("sync idbPut: "+e);}}
         mergeRemote(remote,data.savedAt||0);
         // AI 키가 기기에서 사라졌으면(예: iOS 저장소 정리) 구글 백업에서 자동 복원
         let keyRestored=false;
         if(!localStorage.getItem("gemini.key")&&data.gkey){localStorage.setItem("gemini.key",data.gkey);keyRestored=true;}
         if(!localStorage.getItem("gemini.model")&&data.gmodel)localStorage.setItem("gemini.model",data.gmodel);
         const after=JSON.stringify([state.meals.length,state.workouts.length,state.weights.length]);
-        save();renderAll();if(curTab==="stats")renderStats();if(keyRestored&&typeof renderGeminiUI==="function")renderGeminiUI();
+        if(!saveQuiet()){gSyncing=false;return;}renderAll();if(curTab==="stats")renderStats();if(keyRestored&&typeof renderGeminiUI==="function")renderGeminiUI();
         if(before!==after||keyRestored)toast("☁️ 동기화됨"+(keyRestored?" · AI 키 복원":""));
       }
     }
-  }catch(e){}
+  }catch(e){logErr("autosync: "+e);updateSyncUI("err");const b=document.getElementById("syncBtn");if(b)b.title="자동 동기화 실패 — 눌러서 다시 백업: "+failReason(e);}
   gSyncing=false;
 }
 
@@ -3456,7 +3574,7 @@ function init(){
   gLoadCfg();
   document.getElementById("mConnect").onclick=gConnect;
   document.getElementById("mDisconnect").onclick=gDisconnect;
-  document.getElementById("mShowCid").onclick=()=>{const id=localStorage.getItem("g.clientId")||G.clientId||"";if(!id){toast("저장된 클라이언트 ID가 없어요");return;}try{navigator.clipboard.writeText(id);toast("클립보드에 복사됨");}catch(e){}prompt("내 구글 클라이언트 ID (길게 눌러 복사)",id);};
+  document.getElementById("mShowCid").onclick=()=>{const id=localStorage.getItem("g.clientId")||G.clientId||"";if(!id){toast("저장된 클라이언트 ID가 없어요");return;}try{navigator.clipboard.writeText(id).then(()=>toast("클립보드에 복사됨"),()=>toast("복사가 막혔어요 — ID: "+id));}catch(e){toast("복사가 막혔어요 — ID: "+id);}prompt("내 구글 클라이언트 ID (길게 눌러 복사)",id);};
   document.getElementById("mBackupNow").onclick=()=>{if(!gIsConnected()){toast("먼저 구글 계정을 연결하세요");return;}gDriveBackup(false);};
   document.getElementById("mRestore").onclick=gDriveRestore;
   document.getElementById("mReauth").onclick=async()=>{const old=G.token;G.token=null;try{await gGetToken(true);toast("백업 권한을 추가했어요");renderGoogleUI();gDriveBackup(false);}catch(e){G.token=old;toast("재연결이 취소됐어요");}};
