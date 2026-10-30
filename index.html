@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<!--APPVER:2026.10.30a-->
+<!--APPVER:2026.10.30b-->
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://unpkg.com https://cdn.jsdelivr.net https://www.googletagmanager.com; worker-src 'self' blob:; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://unpkg.com https://*.google-analytics.com https://www.googletagmanager.com; media-src data: blob:; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://generativelanguage.googleapis.com https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://*.google-analytics.com; frame-src https://accounts.google.com; base-uri 'none'; object-src 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -889,7 +889,7 @@ let editMealId=null,curMeal="breakfast",curMealPhoto=null;
 let editWorkoutId=null,curExType="러닝",timerInt=null,timerSec=0;
 let curWorkoutPhoto=null,curWorkoutVideo=null,_vidURL=null;
 
-/* 2026-10-30: JS 템플릿 안의 <img src="${..}"> 문자열을 브라우저 프리로드 스캐너가 실제 URL로 오인해
+/* 2026-10-30: JS 템플릿 안의 img 태그 src 속성(템플릿 변수) 문자열을 브라우저 프리로드 스캐너가 실제 URL로 오인해
    라이브 로드 때마다 404 5건 발생 → 템플릿엔 data-src만 쓰고 innerHTML 직후 여기서 src를 채운다 */
 function fillImgs(root){if(root)root.querySelectorAll("img[data-src]").forEach(im=>{im.src=im.dataset.src;im.removeAttribute("data-src");});}
 function uid(){return Date.now()+""+Math.floor(Math.random()*999);}
